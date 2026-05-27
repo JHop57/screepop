@@ -24,11 +24,10 @@ declare global {
     _say: (message: string, public?: boolean) => 0|-1|-4;
   }
 
-  namespace NodeJS {
-    interface Global {
-      log: any;
-    }
-  }
+}
+// Syntax for adding properties to `global` (ex "global.log")
+declare const global: {
+  log: any;
 }
 
 //monkeypatching
