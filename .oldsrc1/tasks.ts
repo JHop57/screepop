@@ -14,6 +14,7 @@ const task: any = {
       let target = Game.getObjectById(command.target) as AnyCreep | AnyStoreStructure | Tombstone | Ruin | Resource;
       if (!target) {
         if (!Game.rooms[command.pos.roomName]) {
+          //global.quest.to(hauler, new RoomPosition(command.pos.x,command.pos.y,command.pos.roomName))
           hauler.moveTo(new RoomPosition(command.pos.x,command.pos.y,command.pos.roomName), { visualizePathStyle: { stroke: "#fcba03" } });
           return undefined;
         }
@@ -21,7 +22,17 @@ const task: any = {
         return false;
       }
 
+      if(command.amount<0 && (hauler.store.getFreeCapacity()<command.amount*-1)) {
+        console.log("deliver error1"+JSON.stringify(hauler.store)+JSON.stringify(command))
+      }/*
+      else if(command.amount>0 && command.resourceType && command.amount>hauler.store[command.resourceType]) {
+        console.log("deliver error2")
+        return false
+      }*/
+      if(command.amount == 0) return true
+
       if (global.map.maxDistance(hauler.pos, command.pos) > 1 || command.pos.roomName != hauler.pos.roomName) {
+        //global.quest.to(hauler, target.pos)
         hauler.moveTo(target, { visualizePathStyle: { stroke: "#fcba03" } });
         return undefined;
       }
@@ -41,11 +52,11 @@ const task: any = {
           state.info.working = true;
           return true;
         case ERR_FULL:
-          console.log("Energy tracking broke over " + JSON.stringify(command) + " " + JSON.stringify(target));
+          //console.log("Energy tracking broke over " + JSON.stringify(command) + " " + JSON.stringify(target));
           return true; //lie to get transfer job to update, otherwise will keep failing
         //todo make jobs update better
         case ERR_NOT_ENOUGH_RESOURCES:
-          console.log("Energy tracking broke under " + JSON.stringify(command) + " " + JSON.stringify(target));
+          //console.log("Energy tracking broke under " + JSON.stringify(command) + " " + JSON.stringify(target));
           break;
         default:
           console.log("Unhandled error in deliver!" + JSON.stringify(command) + " " + result);
@@ -250,6 +261,60 @@ const task: any = {
       return;
     }
   },
+  found: {
+    run(smith: Creep, state: CreepState) {
+
+      let command = state.commands[0];
+      let target = Game.getObjectById(command.target);
+      if (!target) {
+        if (!Game.rooms[command.pos.roomName]) {
+          smith.moveTo(new RoomPosition(command.pos.x,command.pos.y,command.pos.roomName), { visualizePathStyle: { stroke: "#fcba03" } });
+          return undefined;
+        }
+        console.log("somehow a controller has vanished??");
+        return false;
+      }
+      if (!(target instanceof StructureController)) {
+        console.log("can't found a not controller!");
+        return false;
+      }
+
+      if (global.map.maxDistance(smith.pos, command.pos) > 1 || command.pos.roomName != smith.pos.roomName) {
+        smith.moveTo(target, { visualizePathStyle: { stroke: "#fcba03" } });
+        return undefined;
+      }
+
+      if (state.info.working) return undefined;
+
+      let result = smith.claimController(target);
+
+      switch (result) {
+        case OK:
+          state.info.working = true;
+          return undefined;
+        default:
+          console.log("Unhandled error in founding! " + JSON.stringify(command) + " " + result);
+          break;
+      }
+
+      return false;
+    },
+    resolve(state: CreepState, jobs: Job[], successful: boolean) {
+      //todo this does not properly resolve the job because the current upgrade job needs rebuilding
+      let command = state.commands[0];
+      if (command.job != null) {
+        let refJob = jobBoard.getJobFromID(jobs, command.job);
+        if (refJob) {
+          refJob.active--;
+          let controller = Game.getObjectById(command.target)
+          if(controller && controller.room?.controller?.my) refJob.amount--
+        }
+      }
+
+      state.commands.shift();
+      return;
+    }
+  },
   earlymine: {
     run(miner: Creep, state: CreepState) {
       if (miner.store.getFreeCapacity() == 0) {
@@ -407,8 +472,8 @@ const task: any = {
         if (refJob) {
           refJob.active--;
           if (!successful) refJob.amount += command.amount;
-        }
-      }
+        } else Game.notify("harvest job cannot be resolved!!")
+      } else Game.notify("no harvest job")
 
       let veinMem =
         global.map.getSourceFromID(state.commands[0].target) || global.map.getMineralFromID(state.commands[0].target);
@@ -439,10 +504,10 @@ const task: any = {
         }) as AnyStructure[];
         if (!targetList.length) return true;
 
-        let score = targetList[0].hits + 1000 * global.map.maxDistance(custodian.pos, targetList[0].pos);
+        let score = (targetList[0].hits)/5000 + global.map.maxDistance(custodian.pos, targetList[0].pos);
         target = targetList[0];
         for (let item of targetList) {
-          let testscore = item.hits + 15 * global.map.maxDistance(custodian.pos, item.pos);
+          let testscore = (item.hits)/5000 + global.map.maxDistance(custodian.pos, item.pos);
           if (score > testscore) {
             score = testscore;
             target = item;

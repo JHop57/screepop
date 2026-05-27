@@ -14,6 +14,7 @@ const combat = {
     switch (creepState.role) {
       case "poke":
         creep.moveTo(Game.flags["poke1"]);
+        //global.quest.to(creep,Game.flags["poke1"].pos)
         break;
       case "drain":
         if (creep.hits != creep.hitsMax) {

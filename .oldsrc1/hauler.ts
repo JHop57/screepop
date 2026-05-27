@@ -25,6 +25,7 @@ function Plan(creep: Creep, state: CreepState, jobList: Job[]) {
   }
 
   if (!state.info.cargo) {
+    if(creep.store.getCapacity()>0) state.info.cargo = {}
     console.log("broken hauler! no cargo");
     return false;
   }
@@ -102,7 +103,7 @@ function Plan(creep: Creep, state: CreepState, jobList: Job[]) {
   if (!targetJob || !targetStorage) return false;
 
   //what other jobs can be done with one trip to the chosen source?
-  let maxAmount = creep.store.getCapacity();
+  let maxAmount = creep.store.getFreeCapacity();
   resourceType = targetJob.resourceType
   if(resourceType == 'any') {
     resourceType = getMostCargoType(targetStorage.mem.store)
@@ -111,6 +112,9 @@ function Plan(creep: Creep, state: CreepState, jobList: Job[]) {
     console.log("major error in hauler")
     return false
   }
+
+  maxAmount+=creep.store[resourceType]
+
   let currentAmount = Math.min(maxAmount, targetJob.amount, targetStorage.mem.store[resourceType]);
 
   targetJob.amount -= currentAmount;
@@ -212,6 +216,7 @@ const hauler = {
     }
 
     if(!creepState.info.cargo) {
+      if(creep.store.getCapacity()>0) creepState.info.cargo = {}
       console.log("no cargo in deliver creep??")
       this.remove(creepState, jobList);
       return "deadCreep"
@@ -243,15 +248,16 @@ const hauler = {
 
       if (resolveTask != undefined) {
         resolveMessage = "update";
-        global.scheduler.jobUpdate++;
-        global.scheduler.mapUpdate++;
-        if (task[command.type]) resolveTask = task[command.type].resolve(creepState, jobList, resolveTask);
+        if(resolveTask == false) this.remove(creepState, jobList)
+        else if (task[command.type]) resolveTask = task[command.type].resolve(creepState, jobList, resolveTask);
         else console.log("unknown hauler task type 3");
       }
     }
     return resolveMessage;
   },
   remove(creepState: CreepState, jobs: Job[]) {
+    global.scheduler.jobUpdate++;
+    global.scheduler.mapUpdate++;
     while (creepState.commands.length > 0) {
       let command = creepState.commands[0];
       if (task[command.type]) task[command.type].resolve(creepState, jobs, false);

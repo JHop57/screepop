@@ -24,20 +24,25 @@ const MY_NUMS = {
 
 function cleanList(jobs: Job[]) {
   for (let i = 0; i < jobs.length; i++) {
-    if ((jobs[i].amount <= 0 && jobs[i].active <= 0) || !Game.getObjectById(jobs[i].target as Id<AnyStructure>)) {
+    if(jobs[i].active > 0) continue
+
+    if (jobs[i].amount <= 0 || !Game.getObjectById(jobs[i].target as Id<AnyStructure>) || jobs[i].type=='refine') {
       jobs.splice(i, 1);
       i = i - 1;
       continue;
     }
     let job = jobs[i];
-    if (job.type == "restore") {
+    if (job.type == "restore" && job.active == 0) {
       job = job as RepairJob;
       for (let k = 0; k < job.target.length; k++) {
         let targetId = job.target[k];
         let target = Game.getObjectById(targetId) as AnyStructure | undefined;
-        if (target && target.hitsMax * 0.9 < target.hits) {
+        if (target && target.hitsMax == target.hits) {
           job.target.splice(Number(k), 1);
           k = k - 1;
+        } else if((target instanceof StructureRampart || target instanceof StructureWall) && target.hits>200000 && job.priority > 0) {
+          job.target.splice(Number(k), 1)
+          k--
         }
       }
     } else if(job.type == "deliver" && job.active == 0){
@@ -110,12 +115,15 @@ function getTransferJobs(jobs: Job[]) {
       for(let q in containerMem.store){
         currentStore+=containerMem.store[q]
       }
+      let mat: ResourceConstant|"any" = RESOURCE_ENERGY
+      if(containerMem.rank == 2) mat = 'any'
+
       let newJob: TransferJob = {
         type: "deliver",
         target: k as Id<AnyStoreStructure>,
         pos: containerMem.pos,
         amount: containerMem.max-currentStore,
-        resourceType: 'any',
+        resourceType: mat,
         rank: containerMem.rank,
         priority: 0,
         tick: Game.time,
@@ -124,6 +132,57 @@ function getTransferJobs(jobs: Job[]) {
       };
       jobs.push(newJob)
     }
+  }
+  for(let i in Game.rooms){
+    let terminalList = Game.rooms[i].find(FIND_MY_STRUCTURES, {
+      filter: structure =>
+        structure instanceof StructureTerminal
+    });
+    if(terminalList.length == 0) continue
+    let terminal = terminalList[0] as StructureTerminal
+
+    let repeat = false
+    for(let job of jobs){
+      if(terminal.id == job.target && job.type=="deliver"){
+        repeat = true
+        break
+      }
+    }
+    if(repeat || terminal.store[RESOURCE_HYDROGEN]>80000)continue
+
+    let currentStore = 0
+    for(let q in terminal.store){
+      currentStore+=terminal.store[q as ResourceConstant]
+    }
+    let newJob: TransferJob = {
+      type: "deliver",
+      target: terminal.id,
+      pos: terminal.pos,
+      amount: (terminal.store.getCapacity()/2)-currentStore,
+      resourceType: RESOURCE_HYDROGEN,
+      rank: 4,
+      priority: 0,
+      tick: Game.time,
+      active: 0,
+      id: getID(jobs)
+    };
+    jobs.push(newJob)
+
+    if(terminal.store[RESOURCE_ENERGY]>50000) continue
+
+    newJob = {
+      type: "deliver",
+      target: terminal.id,
+      pos: terminal.pos,
+      amount: 25000,
+      resourceType: RESOURCE_ENERGY,
+      rank: 4,
+      priority: 1,
+      tick: Game.time,
+      active: 0,
+      id: getID(jobs)
+    };
+    jobs.push(newJob)
   }
 }
 
@@ -138,24 +197,23 @@ function getUpgradeJobs(jobs: Job[]) {
     for (let job of jobs as UpgradeJob[]) {
       if (item.id == job.target) {
         repeat = true;
-        job.priority = MY_NUMS.UPGRADE_PRIORITY;
         job.amount = 15000000;
-        if (job.priority < 0) {
-          job.priority = 0;
-        }
         break;
       }
     }
     if (repeat) {
       continue;
     }
+    let priority = 0
+    if(item.ticksToDowngrade>40000) priority-=10
+    if(item.level==8) priority-=10
     let amount = 15000000;
     let newJob = {
       type: "refine",
       target: item.id,
       pos: item.pos,
       amount: amount,
-      priority: MY_NUMS.UPGRADE_PRIORITY,
+      priority: MY_NUMS.UPGRADE_PRIORITY + priority,
       tick: Game.time,
       active: 0,
       id: getID(jobs)
@@ -214,7 +272,7 @@ function getRepairJobs(jobs: Job[]) {
         global.map.rooms[structure.room.name] &&
         !global.map.rooms[structure.room.name].enemyPresence &&
         ((structure.structureType != STRUCTURE_WALL && structure.structureType != STRUCTURE_RAMPART) ||
-          structure.hits < 1000)
+          structure.hits < 100000)
     });
     for (let item of targets) {
       if (priorTargets.includes(item.id)) {
@@ -226,16 +284,63 @@ function getRepairJobs(jobs: Job[]) {
       jobtargets.push(item.id);
     }
   }
+  if (jobtargets.length > 0) {
+    jobamount = Math.floor(jobamount / 100);
+    let newJob = {
+      type: "restore",
+      target: jobtargets,
+      pos: Game.getObjectById(jobtargets[0])!.pos,
+      amount: jobamount,
+      tick: 0,
+      priority: MY_NUMS.REPAIR_PRIORITY,
+      active: 0,
+      id: getID(jobs)
+    };
+    jobs.push(newJob);
+  }
+
+
+  //work on walls
+  jobamount = 0;
+  jobtargets = [];
+  for (let i in Game.rooms) {
+    let thisRoom = Game.rooms[i];
+    let targets: AnyStructure[] = thisRoom.find(FIND_STRUCTURES, {
+      filter: structure =>
+        global.map.rooms[structure.room.name] &&
+        !global.map.rooms[structure.room.name].enemyPresence &&
+        ((structure.structureType == STRUCTURE_WALL || structure.structureType == STRUCTURE_RAMPART) &&
+          structure.hits < 30000000)
+    });
+    for (let item of targets) {
+      if (priorTargets.includes(item.id)) {
+        continue;
+      }
+      let newamount = item.hitsMax - item.hits;
+      jobamount = jobamount + newamount;
+      jobtargets.push(item.id);
+    }
+  }
   if (jobtargets.length == 0) {
     return;
   }
+
+  let priorWallJobs = jobs.filter(entity => entity.type == "restore" && entity.priority == 0) as RepairJob[];
+
+  if(priorWallJobs.length>0){
+    priorWallJobs[0].target.concat(jobtargets)
+    priorWallJobs[0].amount += Math.floor(jobamount / 100);
+    return
+  }
+
   jobamount = Math.floor(jobamount / 100);
   let newJob = {
     type: "restore",
     target: jobtargets,
     pos: Game.getObjectById(jobtargets[0])!.pos,
     amount: jobamount,
-    priority: MY_NUMS.REPAIR_PRIORITY,
+    tick:0,
+    priority: 0,
     active: 0,
     id: getID(jobs)
   };
@@ -301,6 +406,30 @@ function getStaticHarvestJobs(jobs: Job[]) {
   }
 }
 
+function getFoundJobs(jobs:Job[]){
+  if(!Game.flags["found"]) return
+  let controller = Game.flags["found"].room?.controller
+  if(!controller || controller.my==true) return
+
+  for(let priorJob of jobs){
+    if(priorJob.type=='found' && priorJob.target == controller.id){
+      return
+    }
+  }
+
+  let newJob = {
+    type:"found",
+    target:controller.id,
+    pos:controller.pos,
+    amount:1,
+    tick:0,
+    priority:0,
+    active:0,
+    id: getID(jobs)
+  }
+  jobs.push(newJob)
+}
+
 function getID(jobs: Job[]) {
   let jobID = 0;
   let loop = true;
@@ -324,6 +453,7 @@ const jobBoard = {
     getUpgradeJobs(jobs);
     getRepairJobs(jobs);
     getStaticHarvestJobs(jobs);
+    getFoundJobs(jobs);
   },
 
   /*
@@ -357,18 +487,22 @@ const jobBoard = {
       let priority = job.priority;
       switch (job.type) {
         case "restore":
+          if(priority == 0 && Game.time-200<(job as RepairJob).tick) continue
+
+          priority -= job.active*500
+
           if(job.target.length<1) continue
           target = Game.getObjectById(job.target[0] as Id<AnyStructure>);
-          let repairdistance = 999;
+          let repairdistance = 999999999;
           for (let repairtarget of job.target) {
             let targettemp = Game.getObjectById(repairtarget as Id<AnyStructure>);
             if (
               targettemp &&
-              global.map.maxDistance(targettemp.pos, origin1) + global.map.maxDistance(targettemp.pos, origin2) <
+              global.map.maxDistance(targettemp.pos, origin1) + global.map.maxDistance(targettemp.pos, origin2) + targettemp.hits/1000<
                 repairdistance
             ) {
               repairdistance =
-                global.map.maxDistance(targettemp.pos, origin1) + global.map.maxDistance(targettemp.pos, origin2);
+                global.map.maxDistance(targettemp.pos, origin1) + global.map.maxDistance(targettemp.pos, origin2) + targettemp.hits/1000;
               target = targettemp;
             }
           }

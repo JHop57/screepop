@@ -28,7 +28,7 @@ function getEnergy(creep: Creep, creepState: CreepState) {
   let choiceRoom = undefined;
   for (let roomId in map) {
     let roomMem = map[roomId];
-    if(roomMem.enemyPresence) continue
+    if (roomMem.enemyPresence) continue;
 
     for (let storeId in roomMem.containers) {
       let storeMem = roomMem.containers[storeId];
@@ -118,7 +118,7 @@ function getEnergy(creep: Creep, creepState: CreepState) {
 }
 
 function workerFilter(job: Job) {
-  return job.type != "delve" && job.type != "deliver" ;
+  return job.type != "delve" && job.type != "deliver" && job.type != "found";
 }
 
 function plan(creep: Creep, state: CreepState, jobList: Job[]) {
@@ -127,14 +127,14 @@ function plan(creep: Creep, state: CreepState, jobList: Job[]) {
     return false;
   }
 
-  if(!state.info.cargo) {
-    console.log("broken worker! no cargo")
-    return false
+  if (!state.info.cargo) {
+    console.log("broken worker! no cargo");
+    return false;
   }
 
   let plannedPos = creep.pos;
   let targetPos = plannedPos;
-  let energy = state.info.cargo[RESOURCE_ENERGY]||0;
+  let energy = creep.store[RESOURCE_ENERGY] || 0;
   if (energy < creep.store.getCapacity() / 3) {
     let plannedPos = getEnergy(creep, state);
     if (!plannedPos) {
@@ -143,14 +143,34 @@ function plan(creep: Creep, state: CreepState, jobList: Job[]) {
     return true;
   }
   while (energy > 0) {
-    let {job:myJob, score:discard} = jobBoard.getJob(jobList, workerFilter,state.info.cargo||{}, creep.store.getCapacity(), 4, plannedPos, targetPos);
+    let { job: myJob, score: discard } = jobBoard.getJob(
+      jobList,
+      workerFilter,
+      state.info.cargo || {},
+      creep.store.getCapacity(),
+      4,
+      plannedPos,
+      targetPos
+    );
     if (!myJob) {
       return false;
     }
     let eAmount;
-    let target = myJob.target
+    let target = myJob.target as Id<AnyStructure>[] | Id<AnyStructure>;
+    let pos = myJob.pos
     if (myJob.type == "restore") {
-      target = myJob.target[0] as Id<AnyStoreStructure>
+      let targetEntity = Game.getObjectById(myJob.target[0] as Id<AnyStructure>);
+      let repairdistance = 999999999;
+      for (let repairtarget of myJob.target) {
+        let targettemp = Game.getObjectById(repairtarget as Id<AnyStructure>);
+        if (targettemp && global.map.maxDistance(targettemp.pos, creep.pos) + targettemp.hits / 1000 < repairdistance) {
+          repairdistance = global.map.maxDistance(targettemp.pos, creep.pos) + targettemp.hits / 1000;
+          targetEntity = targettemp;
+          target = targetEntity.id as Id<AnyStructure>;
+          pos = targetEntity.pos
+        }
+      }
+
       eAmount = energy;
     } else {
       eAmount = Math.min(energy, myJob.amount);
@@ -158,13 +178,14 @@ function plan(creep: Creep, state: CreepState, jobList: Job[]) {
     let newCommand: Command = {
       type: myJob.type,
       target: target as Id<AnyStoreStructure> /*jank todo*/,
-      pos: myJob.pos,
+      pos: pos,
       amount: eAmount,
       resourceType: RESOURCE_ENERGY,
       job: myJob.id
     };
     myJob.amount -= eAmount;
     myJob.active++;
+    if((myJob as RepairJob).tick) (myJob as RepairJob).tick = Game.time
     energy -= eAmount;
     state.commands.push(newCommand);
 
@@ -199,7 +220,7 @@ const worker = {
         plan(creep, creepState, jobList);
       }
       if (creepState.commands.length == 0) {
-        creep.say("❌🛠, 💔. "+loop, true);
+        creep.say("❌🛠, 💔. " + loop, true);
         return "noWork";
       }
 
@@ -219,9 +240,9 @@ const worker = {
   },
   remove(creepState: CreepState, jobs: Job[]) {
     while (creepState.commands.length > 0) {
-      let command = creepState.commands[0]
+      let command = creepState.commands[0];
       if (task[command.type]) task[command.type].resolve(creepState, jobs, false);
-      else console.log("unknown task type 4")
+      else console.log("unknown task type 4");
     }
   }
 };

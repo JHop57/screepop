@@ -11,7 +11,8 @@
     "experimentalDecorators": true,
     "noImplicitReturns": true,
     "allowSyntheticDefaultImports": true,
-    "allowUnreachableCode": false
+    "allowUnreachableCode": false,
+    "types": ["screeps"]
   },
   "exclude": [
     "node_modules"
