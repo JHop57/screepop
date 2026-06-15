@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /*
 Telos, ᏘᎼᏗ
 June 2025
@@ -7,6 +8,7 @@ reason: had enough of type errors in runtime, implement task manager type system
 
 import { WorldAtlas } from "WorldAtlas";
 import { JobBoard } from "JobBoard";
+import Hud from "utils/Hud";
 import {Tools} from "utils/Tools";
 import { creepHandler } from "Foreman";
 import { Prioritizer } from "Prioritizer";
@@ -28,33 +30,43 @@ declare global {
 // Syntax for adding properties to `global` (ex "global.log")
 declare const global: {
   log: any;
+  g: {
+    atlas: WorldAtlas;
+    jobBoard: JobBoard;
+    hud: Hud;
+  }
 }
 
-//monkeypatching
+// monkeypatching
+// eslint-disable-next-line no-underscore-dangle, @typescript-eslint/unbound-method
 const _say = Creep.prototype.say;
 Creep.prototype.say = function(message, sayPublic = true) {
     return _say.call(this, message, sayPublic);
 };
 
-//declare my global variables, used 'g' instead of 'global' because it's shorter and I'm lazy.
-(global as any).g = {atlas: new WorldAtlas(), jobBoard: new JobBoard()};
+// declare my global variables, used 'g' instead of 'global' because it's shorter and I'm lazy.
+global.g = {atlas: new WorldAtlas(), jobBoard: new JobBoard(), hud: new Hud()};
 
-for( let room in Game.rooms){
+for( const room in Game.rooms){
   g.atlas.SurveyRoom(room)
 }
 g.atlas.WriteMem()
 
-let prioritizer = new Prioritizer();
-for(let updateFunction of creepHandler.getUpdateFunctions()){
+const prioritizer = new Prioritizer();
+for(const updateFunction of creepHandler.getUpdateFunctions()){
   prioritizer.schedule(updateFunction.func, updateFunction.name, 1, 10);
 }
 
 module.exports.loop = function (){
+  g.hud.makeElement("", Game.spawns.Spawn1.pos);
   prioritizer.run();
-  for(let creepId in Game.creeps){
-    let creep = Game.creeps[creepId];
+  for(const creepId in Game.creeps){
+    const creep = Game.creeps[creepId];
     if(creep.spawning) continue;
     creepHandler.assignCreep(creep);
   }
   creepHandler.run();
+  prioritizer.writeMem();
+
+  g.hud.display();
 }

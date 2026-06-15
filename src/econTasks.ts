@@ -1,11 +1,12 @@
+/* eslint-disable max-classes-per-file */
 import { min } from "lodash";
 import { type Job } from "./JobBoard";
 import { Tools } from "utils/Tools";
 import { CtrlLvl} from "WorldAtlas";
-import { Dwarf, Command } from "Foreman";
+import { Command, Dwarf } from "Foreman";
 
 
-type Evaluation = {
+interface Evaluation {
   normalized: number;
   score: number;
   amount: number;
@@ -13,23 +14,25 @@ type Evaluation = {
 }
 
 abstract class Task {
-  //return energy/intent estimate for this task
-  //todo: account for energy loss from creep aging (don't allocate big creeps to small jobs)
-  //be careful, don't touch simdwarf.info.cargo!
-  public abstract efficiency(simDwarf: Dwarf, simStore: SimpleStore, simPos: Pos, job: Job): Evaluation;
-  //operate on job and dwarf to create the next command(s) and store in dwarf
+  // return energy/intent estimate for this task
+  // todo: account for energy loss from creep aging (don't allocate big creeps to small jobs)
+  // be careful, don't touch simdwarf.info.cargo!
+  public abstract efficiency(simDwarf: Dwarf, simStore: SimpleStore, simPos: Pos, job: Job, timeAdjustment?: number): Evaluation;
+  // operate on job and dwarf to create the next command(s) and store in dwarf
   public abstract claim(dwarf: Dwarf, creep: Creep, job: Job, amount: number, resourceType?: ResourceConstant): boolean;
-  //returns boolean if task is complete, undefined if still in progress
+  // returns boolean if task is complete, undefined if still in progress
   public abstract do(dwarf: Dwarf, creep: Creep): boolean | undefined;
-  //updates job and dwarf on task completion, return if jobs needs updating
-  //success is whether to revert the job or complete it, errors in do() may be counted as successes here to clear away broken jobs.
+  // updates job and dwarf on task completion, return if jobs needs updating
+  // success is whether to revert the job or complete it, errors in do() may be counted as successes here to clear away broken jobs.
   public abstract complete(dwarf: Dwarf, jobs: Job[], success: boolean): boolean;
+  // simple function to differentiate between continuous tasks and limited tasks, used for task claiming logic
+  public abstract maxResource(job: Job): number;
 
   protected travel(creep: Creep, targetId: Id<RoomObject&_HasId>, targetPos: Pos, range: number): boolean | undefined {
-    let target = Game.getObjectById(targetId);
+    const target = Game.getObjectById(targetId);
     let travelPos
     if (!target) {
-      //if I have sight of the room but not the target, then the target must be gone
+      // if I have sight of the room but not the target, then the target must be gone
       if (Game.rooms[targetPos.roomName]) return false;
       travelPos = new RoomPosition(targetPos.x, targetPos.y, targetPos.roomName);
     } else {
@@ -37,8 +40,8 @@ abstract class Task {
       if (creep.pos.inRangeTo(travelPos, range)) return true;
     }
 
-    let result = creep.moveTo(travelPos, { range: range });
-    if (result == OK || result == ERR_TIRED) return undefined;
+    const result = creep.moveTo(travelPos, { range });
+    if (result === OK || result === ERR_TIRED) return undefined;
 
     console.log(`Error moving creep ${creep.name} to ${JSON.stringify(travelPos)}: ${result}`);
     return false;
@@ -46,7 +49,7 @@ abstract class Task {
 
   protected unclaimJob(jobs: Job[], jobId: number | undefined, returnAmount: number): boolean {
     if (!jobId) return false;
-    let job = jobs.find(j => j.id == jobId);
+    const job = jobs.find(j => j.id === jobId);
     if (!job) return false;
     job.active--;
     job.amount += returnAmount;
@@ -54,11 +57,11 @@ abstract class Task {
   }
 
   protected generateBasicCommand(job: Job, amount: number, resourceType?: ResourceConstant): Command {
-    let newCommand: Command = {
+    const newCommand: Command = {
       type: job.type,
       target: job.target as Id<AnyStructure>,
       pos: job.pos,
-      amount: amount,
+      amount,
       resourceType: resourceType || RESOURCE_ENERGY,
       jobId: job.id
     };
@@ -68,12 +71,17 @@ abstract class Task {
 
     return newCommand
   }
+
+  protected continuousTaskMaxResource(): number {return 100000}
+  protected limitedTaskMaxResource(job: Job): number {
+    return job.amount;
+  }
 }
 
 class DeliverTask extends Task {
-  public efficiency(simDwarf: Dwarf, simStore: SimpleStore, simPos: Pos, job: Job, resourceType?: ResourceConstant): Evaluation {
-    let result: Evaluation = { normalized: 0, score: 0, amount: 0, time: 0 };
-    if (job.resourceType == "any" && !resourceType) {
+  public efficiency(simDwarf: Dwarf, simStore: SimpleStore, simPos: Pos, job: Job, timeAdjustment=0, resourceType?: ResourceConstant): Evaluation {
+    const result: Evaluation = { normalized: 0, score: 0, amount: 0, time: 0 };
+    if (job.resourceType === "any" && !resourceType) {
       console.log("efficiency deliver task error: job resource type is any but no resource type provided");
       return result;
     }
@@ -83,25 +91,25 @@ class DeliverTask extends Task {
       maxAmount = simStore[resourceType || job.resourceType as ResourceConstant] || 0;
     } else {
       let usedAmount = 0;
-      for (let resource in simStore) {
+      for (const resource in simStore) {
         usedAmount = usedAmount + (simStore[resource as ResourceConstant] || 0);
       }
       maxAmount = simDwarf.info.carryParts * CARRY_CAPACITY - usedAmount;
     }
-    let amount = Math.min(maxAmount, Math.abs(job.amount));
+    const amount = Math.min(maxAmount, Math.abs(job.amount));
 
-    //todo: pathfinding length. v low priority
-    let distance = Tools.maxDistance(simPos, job.pos);
+    // todo: pathfinding length. v low priority
+    const distance = Tools.maxDistance(simPos, job.pos) + timeAdjustment;
 
-    //amount*lifetime / spawncost*distance
-    //priority should be a number between ~0 and ~2, default 1.
-    let score = job.priority * (amount*1500) / (simDwarf.info.spawnCost*(distance+.1)); //+.1 avoids div/0 err
+    // amount*lifetime / spawncost*distance
+    // priority should be a number between ~0 and ~2, default 1.
+    const score = job.priority * (amount*1500) / (simDwarf.info.spawnCost*(distance+.1)); // +.1 avoids div/0 err
 
-    return { normalized: 0, score: score, amount: amount, time: distance };
+    return { normalized: 0, score, amount, time: distance };
   }
 
   public claim(dwarf: Dwarf, creep: Creep, job: Job, amount: number, resourceType?: ResourceConstant): boolean {
-    if (job.resourceType == "any" && !resourceType) {
+    if (job.resourceType === "any" && !resourceType) {
       console.log("claiming haul task error: job resource type is any but no resource type provided");
       return false;
     }
@@ -109,14 +117,14 @@ class DeliverTask extends Task {
       console.log("deliver error1" + JSON.stringify(creep.store) + JSON.stringify(job))
       return false;
     }
-    let containerTally = g.atlas.rooms[job.pos.roomName].containers[job.target as Id<StructureContainer>];
+    const containerTally = g.atlas.rooms[job.pos.roomName].containers[job.target as Id<StructureContainer>];
     if (containerTally) {
       if (amount < 0) {
         containerTally.active++;
         containerTally.store[resourceType as ResourceConstant] = (containerTally.store[resourceType as ResourceConstant] || 0) + amount;
       }
     }
-    let command = this.generateBasicCommand(job, amount, resourceType || job.resourceType as ResourceConstant);
+    const command = this.generateBasicCommand(job, amount, resourceType || job.resourceType as ResourceConstant);
 
     dwarf.commands.push(command);
     return true;
@@ -129,15 +137,15 @@ class DeliverTask extends Task {
       return false;
     }
 
-    let traveling = this.travel(creep, command.target, command.pos, 1);
-    if (traveling != true) return traveling;
+    const traveling = this.travel(creep, command.target, command.pos, 1);
+    if (traveling !== true) return traveling;
 
-    //already did action this tick?
+    // already did action this tick?
     if (dwarf.info.working) return undefined;
 
-    let target = Game.getObjectById(command.target);
-    let amount = command.amount;
-    if (!command.resourceType) return false; //to silence typescript, should always be set for haul tasks
+    const target = Game.getObjectById(command.target);
+    const amount = command.amount;
+    if (!command.resourceType) return false; // to silence typescript, should always be set for haul tasks
 
     let result;
     if (target instanceof Resource) result = creep.pickup(target);
@@ -150,38 +158,38 @@ class DeliverTask extends Task {
         dwarf.info.working = true;
         return true;
       case ERR_FULL:
-        //TODO: fail loud to check for errors in energy tracking, currently silenced because of spawn regeneration edge case
+        // TODO: fail loud to check for errors in energy tracking, currently silenced because of spawn regeneration edge case
         break;
       default:
-        console.log("Unhandled error in deliver!" + JSON.stringify(command) + " " + result);
+        console.log("Unhandled error in deliver!" + JSON.stringify(command) + " " + result.toString());
         break;
     }
-    //complete the job, if it still needs doing it will be detected and readded
+    // complete the job, if it still needs doing it will be detected and readded
     return true;
   }
 
   public complete(dwarf: Dwarf, jobs: Job[], success: boolean): boolean {
-    let command = dwarf.commands.shift();
+    const command = dwarf.commands.shift();
 
-    //satisfy typescript
+    // satisfy typescript
     if (!command || !command.resourceType || !dwarf.info.cargo) {
       console.log("deliver complete typescript error");
       return false;
     }
 
     if (success) {
-      let carrying = dwarf.info.cargo[command.resourceType] || 0;
+      const carrying = dwarf.info.cargo[command.resourceType] || 0;
       dwarf.info.cargo[command.resourceType] = carrying - command.amount;
     }
 
-    let containerTally = g.atlas.rooms[command.pos.roomName].containers[command.target as Id<StructureContainer>];
+    const containerTally = g.atlas.rooms[command.pos.roomName].containers[command.target as Id<StructureContainer>];
     if (containerTally) {
       if (command.amount > 0 && success) {
         g.atlas.LogContainerAdd({ roomId: command.pos.roomName, containerId: command.target as Id<StructureContainer>, amount: command.amount, type: command.resourceType })
       } else {
         containerTally.active--;
         if (!success) {
-          containerTally.store[command.resourceType] -= command.amount;
+          containerTally.store[command.resourceType] = (containerTally.store[command.resourceType] || command.amount) - command.amount;
         }
       }
     }
@@ -189,28 +197,30 @@ class DeliverTask extends Task {
     if (!success) returnAmount = command.amount
     return this.unclaimJob(jobs, command.jobId, returnAmount);
   }
+  public maxResource(job: Job): number {
+    return this.limitedTaskMaxResource(job);
+  }
 }
 
-//build construction site
+// build construction site
 class CarveTask extends Task {
-  public efficiency(simDwarf: Dwarf, simStore: SimpleStore, simPos: Pos, job: Job): Evaluation {
-    let maxAmount = simStore[RESOURCE_ENERGY] || 0;
+  public efficiency(simDwarf: Dwarf, simStore: SimpleStore, simPos: Pos, job: Job, timeAdjustment = 0): Evaluation {
+    const maxAmount = simStore[RESOURCE_ENERGY] || 0;
     if (maxAmount <= 0 || job.amount <= 0) {
-      console.log("efficiency carve task error: energy error");
       return { normalized: 0, score: 0, amount: 0, time: 0 };
     }
 
-    let amount = Math.min(maxAmount, job.amount);
+    const amount = Math.min(maxAmount, job.amount);
 
-    //todo: pathfinding length. v low priority
-    let distance = Tools.maxDistance(simPos, job.pos);
-    let time = distance + Math.ceil(amount / (simDwarf.info.workParts * BUILD_POWER))
+    // todo: pathfinding length. v low priority
+    const distance = Tools.maxDistance(simPos, job.pos);
+    const time = distance + Math.ceil(amount / (simDwarf.info.workParts * BUILD_POWER)) + timeAdjustment
 
-    //amount*lifetime / spawncost*distance
-    //priority should be a number between ~0 and ~2, default 1.
-    let score = job.priority * (amount*1500) / (simDwarf.info.spawnCost*(time+.1)); //+.1 avoids div/0 err
+    // amount*lifetime / spawncost*distance
+    // priority should be a number between ~0 and ~2, default 1.
+    const score = job.priority * (amount*1500) / (simDwarf.info.spawnCost*(time+.1)); // +.1 avoids div/0 err
 
-    return { normalized: 0, score: score, amount: amount, time: time };
+    return { normalized: 0, score, amount, time };
   }
 
   public claim(dwarf: Dwarf, creep: Creep, job: Job, amount: number): boolean {
@@ -219,13 +229,13 @@ class CarveTask extends Task {
       return false;
     }
 
-    let command = this.generateBasicCommand(job, amount);
+    const command = this.generateBasicCommand(job, amount);
     dwarf.commands.push(command);
     return true;
   }
 
   public do(dwarf: Dwarf, creep: Creep): boolean | undefined {
-    //impossible, but to silence typescript.
+    // impossible, but to silence typescript.
     if (!dwarf.info.cargo || dwarf.info.cargo[RESOURCE_ENERGY] === undefined) {
       console.log("carve cargo error");
       return false;
@@ -237,24 +247,25 @@ class CarveTask extends Task {
       return false;
     }
 
-    let traveling = this.travel(creep, command.target, command.pos, 1);
-    if (traveling == undefined) return undefined;
-    //construction might be complete, but it's certainly gone!
-    if (traveling == false) return true;
+    const traveling = this.travel(creep, command.target, command.pos, 1);
+    if (traveling === undefined) return undefined;
+    // construction might be complete, but it's certainly gone!
+    if (traveling === false) return true;
 
     if (dwarf.info.working) return undefined;
 
-    let target = Game.getObjectById(command.target);
-    let result = creep.build(target as ConstructionSite);
+    const target = Game.getObjectById(command.target);
+    const result = creep.build(target as ConstructionSite);
     switch (result) {
       case OK:
         dwarf.info.working = true;
-        //use current work parts to account for damage
-        let carveAmount = creep.getActiveBodyparts(WORK) * BUILD_POWER;
+        // use current work parts to account for damage
+        // eslint-disable-next-line no-case-declarations
+        const carveAmount = creep.getActiveBodyparts(WORK) * BUILD_POWER;
         command.amount -= carveAmount;
         dwarf.info.cargo.energy -= carveAmount;
         if (command.amount <= 0) {
-          dwarf.info.cargo.energy += -1 * command.amount; //refund excess energy
+          dwarf.info.cargo.energy += -1 * command.amount; // refund excess energy
           return true;
         }
         return undefined;
@@ -270,9 +281,9 @@ class CarveTask extends Task {
   }
 
   public complete(dwarf: Dwarf, jobs: Job[], success: boolean): boolean {
-    let command = dwarf.commands.shift();
+    const command = dwarf.commands.shift();
 
-    //satisfy typescript
+    // satisfy typescript
     if (!command) {
       console.log("carve complete typescript error");
       return false;
@@ -282,27 +293,30 @@ class CarveTask extends Task {
     if (!success) returnAmount = command.amount
     return this.unclaimJob(jobs, command.jobId, returnAmount);
   }
+
+  public maxResource(job: Job): number {
+    return this.limitedTaskMaxResource(job);
+  }
 }
 
-//upgrade controller
+// upgrade controller
 class RefineTask extends Task {
-  public efficiency(simDwarf: Dwarf, simStore: SimpleStore, simPos: Pos, job: Job): Evaluation {
-    let maxAmount = simStore[RESOURCE_ENERGY] || 0;
+  public efficiency(simDwarf: Dwarf, simStore: SimpleStore, simPos: Pos, job: Job, timeAdjustment = 0): Evaluation {
+    const maxAmount = simStore[RESOURCE_ENERGY] || 0;
     if (maxAmount <= 0 || job.amount <= 0) {
-      console.log("efficiency refine task error: energy error");
       return { normalized: 0, score: 0, amount: 0, time: 0 };
     }
 
-    //todo: pathfinding length. v low priority
-    let distance = Tools.maxDistance(simPos, job.pos);
-    let workAmount = Math.min(simDwarf.info.workParts, job.amount);
-    let time = distance + Math.ceil(maxAmount / (workAmount * UPGRADE_CONTROLLER_POWER))
+    // todo: pathfinding length. v low priority
+    const distance = Tools.maxDistance(simPos, job.pos);
+    const workAmount = Math.min(simDwarf.info.workParts, job.amount);
+    const time = distance + Math.ceil(maxAmount / (workAmount * UPGRADE_CONTROLLER_POWER)) + timeAdjustment;
 
-    //amount*lifetime / spawncost*distance
-    //priority should be a number between ~0 and ~2, default 1.
-    let score = job.priority * (maxAmount*1500) / (simDwarf.info.spawnCost*(time+.1)); //+.1 avoids div/0 err
+    // amount*lifetime / spawncost*distance
+    // priority should be a number between ~0 and ~2, default 1.
+    const score = job.priority * (maxAmount*1500) / (simDwarf.info.spawnCost*(time+.1)); // +.1 avoids div/0 err
 
-    return { normalized: 0, score: score, amount: workAmount, time: time };
+    return { normalized: 0, score, amount: workAmount, time };
   }
 
   public claim(dwarf: Dwarf, creep: Creep, job: Job, amount: number): boolean {
@@ -311,13 +325,13 @@ class RefineTask extends Task {
       return false;
     }
 
-    let command = this.generateBasicCommand(job, amount);
+    const command = this.generateBasicCommand(job, amount);
     dwarf.commands.push(command);
     return true;
   }
 
   public do(dwarf: Dwarf, creep: Creep): boolean | undefined {
-    //impossible, but to silence typescript.
+    // impossible, but to silence typescript.
     if (!dwarf.info.cargo || dwarf.info.cargo[RESOURCE_ENERGY] === undefined) {
       console.log("refine cargo error");
       return false;
@@ -329,18 +343,19 @@ class RefineTask extends Task {
       return false;
     }
 
-    let traveling = this.travel(creep, command.target, command.pos, 3);
-    if (traveling != true) return traveling;
+    const traveling = this.travel(creep, command.target, command.pos, 3);
+    if (traveling !== true) return traveling;
 
     if (dwarf.info.working) return undefined;
 
-    let target = Game.getObjectById(command.target);
-    let result = creep.upgradeController(target as StructureController);
+    const target = Game.getObjectById(command.target);
+    const result = creep.upgradeController(target as StructureController);
     switch (result) {
       case OK:
         dwarf.info.working = true;
-        //use current work parts to account for downgrades
-        let refineAmount = Math.min(creep.getActiveBodyparts(WORK), dwarf.info.cargo.energy, creep.store.energy);
+        // use current work parts to account for downgrades
+        // eslint-disable-next-line no-case-declarations
+        const refineAmount = Math.min(creep.getActiveBodyparts(WORK), dwarf.info.cargo.energy, creep.store.energy);
         dwarf.info.cargo.energy -= refineAmount;
         if (refineAmount < creep.getActiveBodyparts(WORK)) {
           dwarf.info.cargo.energy = 0;
@@ -359,26 +374,30 @@ class RefineTask extends Task {
   }
 
   public complete(dwarf: Dwarf, jobs: Job[], success: boolean): boolean {
-    let command = dwarf.commands.shift();
+    const command = dwarf.commands.shift();
 
-    //satisfy typescript
+    // satisfy typescript
     if (!command) {
       console.log("refine complete typescript error");
       return false;
     }
 
-    let returnAmount = dwarf.info.workParts
+    const returnAmount = dwarf.info.workParts
     return this.unclaimJob(jobs, command.jobId, returnAmount);
+  }
+
+  public maxResource(job: Job): number {
+    return this.continuousTaskMaxResource();
   }
 }
 
-//claim new controller
+// claim new controller
 class ColonizeTask extends Task {
-  public efficiency(simDwarf: Dwarf, simStore: SimpleStore, simPos: RoomPosition, job: Job): Evaluation {
-    let amount = Math.min(1,job.amount); //colonize tasks are all or nothing, so amount is always 1
-    let distance = Tools.maxDistance(simPos, job.pos);
-    let score = job.priority * amount / (simDwarf.info.spawnCost*(distance+.1)); //+.1 avoids div/0 err
-    return { normalized: 0, score: score, amount: amount, time: distance };
+  public efficiency(simDwarf: Dwarf, simStore: SimpleStore, simPos: RoomPosition, job: Job, timeAdjustment = 0): Evaluation {
+    const amount = Math.min(1,job.amount); // colonize tasks are all or nothing, so amount is always 1
+    const distance = Tools.maxDistance(simPos, job.pos) + timeAdjustment;
+    const score = job.priority * amount / (simDwarf.info.spawnCost*(distance+.1)); // +.1 avoids div/0 err
+    return { normalized: 0, score, amount, time: distance };
   }
 
   public claim(dwarf: Dwarf, creep: Creep, job: Job, amount: number): boolean {
@@ -387,7 +406,7 @@ class ColonizeTask extends Task {
       return false;
     }
 
-    let command = this.generateBasicCommand(job, amount);
+    const command = this.generateBasicCommand(job, amount);
     dwarf.commands.push(command);
     return true;
   }
@@ -399,23 +418,23 @@ class ColonizeTask extends Task {
       return false;
     }
 
-    let traveling = this.travel(creep, command.target, command.pos, 1);
-    if (traveling != true) return traveling;
+    const traveling = this.travel(creep, command.target, command.pos, 1);
+    if (traveling !== true) return traveling;
 
     if (dwarf.info.working) return undefined;
 
-    let target = Game.getObjectById(command.target);
-    let result = creep.claimController(target as StructureController);
+    const target = Game.getObjectById(command.target);
+    const result = creep.claimController(target as StructureController);
     switch (result) {
       case OK:
         dwarf.info.working = true;
-        //claiming may take multiple ticks(?), so wait to complete until it's done
+        // claiming may take multiple ticks(?), so wait to complete until it's done
         return undefined;
       case ERR_GCL_NOT_ENOUGH:
         console.log("colonize error: not enough GCL");
         break
     }
-    //TODO: check whether claiming really is instant.
+    // TODO: check whether claiming really is instant.
     if (creep.room.controller?.my) {
       return true;
     }
@@ -423,9 +442,9 @@ class ColonizeTask extends Task {
   }
 
   public complete(dwarf: Dwarf, jobs: Job[], success: boolean): boolean {
-    let command = dwarf.commands.shift();
+    const command = dwarf.commands.shift();
 
-    //satisfy typescript
+    // satisfy typescript
     if (!command) {
       console.log("colonize complete typescript error");
       return false;
@@ -439,20 +458,23 @@ class ColonizeTask extends Task {
     if (!success) returnAmount = command.amount
     return this.unclaimJob(jobs, command.jobId, returnAmount);
   }
+  public maxResource(job: Job): number {
+    return this.limitedTaskMaxResource(job);
+  }
 }
 
-//mine source or mineral
+// mine source or mineral
 class DelveTask extends Task {
-  public efficiency(simDwarf: Dwarf, simStore: SimpleStore, simPos: RoomPosition, job: Job): Evaluation {
-    //delve tasks are by workpart, not energy.
-    //job.active is workpart count, not creep count
+  public efficiency(simDwarf: Dwarf, simStore: SimpleStore, simPos: RoomPosition, job: Job, timeAdjustment = 0): Evaluation {
+    // delve tasks are by workpart, not energy.
+    // job.active is workpart count, not creep count
     if (job.amount <= job.active) return { normalized: 0, score: 0, amount: 0, time: 0 };
-    if (job.resourceType != RESOURCE_ENERGY && job.active >0) return { normalized: 0, score: 0, amount: 0, time: 0 }; //only one creep on minerals
+    if (job.resourceType !== RESOURCE_ENERGY && job.active >0) return { normalized: 0, score: 0, amount: 0, time: 0 }; // only one creep on minerals
 
-    let amount = Math.max( 0, Math.min( simDwarf.info.workParts, job.amount - job.active));
-    let distance = Tools.maxDistance(simPos, job.pos);
-    let score = job.priority * Math.pow(amount, 3) / (simDwarf.info.spawnCost*(distance+10)); //+.1 avoids div/0 err
-    return { normalized: 0, score: score, amount: amount, time: distance + 500 };
+    const amount = Math.max( 0, Math.min( simDwarf.info.workParts, job.amount - job.active));
+    const distance = Tools.maxDistance(simPos, job.pos) + timeAdjustment;
+    const score = job.priority * Math.pow(amount, 3) / (simDwarf.info.spawnCost*(distance+10)); // +.1 avoids div/0 err
+    return { normalized: 0, score, amount, time: distance + 500 };
   }
 
   public claim(dwarf: Dwarf, creep: Creep, job: Job, amount: number): boolean {
@@ -461,8 +483,8 @@ class DelveTask extends Task {
       return false;
     }
 
-    let command = this.generateBasicCommand(job, 0);
-    job.active += amount-1; //track active workparts, not creeps, account for +1 in generateBasicCommand
+    const command = this.generateBasicCommand(job, 0);
+    job.active += amount-1; // track active workparts, not creeps, account for +1 in generateBasicCommand
     command.amount = amount;
     dwarf.commands.push(command);
     return true;
@@ -477,36 +499,36 @@ class DelveTask extends Task {
 
     let range = 1
     let travelTarget = command.target;
-    let travelPos = command.pos;
+    const travelPos = command.pos;
 
     let harvestMulti = 0;
     let depositAmount = 0;
     let container;
 
-    //if there's a container, go to it instead
-    let delveTarget = Game.getObjectById(command.target);
+    // if there's a container, go to it instead
+    const delveTarget = Game.getObjectById(command.target);
     let extractor: StructureExtractor | undefined;
     if (delveTarget) {
       let delveAtlas
       if (delveTarget instanceof Source) {
         depositAmount = delveTarget.energy
-        if (depositAmount == 0) return true;
+        if (depositAmount === 0) return true;
 
         harvestMulti = HARVEST_POWER;
         delveAtlas = g.atlas.rooms[delveTarget.pos.roomName].sources[command.target as Id<Source>];
       } else if (delveTarget instanceof Mineral) {
         depositAmount = delveTarget.mineralAmount
-        if (depositAmount == 0) return true;
+        if (depositAmount === 0) return true;
 
         harvestMulti = HARVEST_MINERAL_POWER
         delveAtlas = g.atlas.rooms[delveTarget.pos.roomName].minerals[command.target as Id<Mineral>];
 
-        extractor = delveTarget.pos.findInRange(FIND_STRUCTURES, 0, { filter: s => s.structureType == STRUCTURE_EXTRACTOR })[0] as StructureExtractor | undefined;
+        extractor = delveTarget.pos.findInRange(FIND_STRUCTURES, 0, { filter: s => s.structureType === STRUCTURE_EXTRACTOR })[0] as StructureExtractor | undefined;
         if (!extractor) {
           console.log("delve error: no extractor found");
           return false;
         }
-        if ((extractor as StructureExtractor).cooldown >= 1) {
+        if ((extractor ).cooldown >= 1) {
           return undefined;
         }
       } else {
@@ -514,15 +536,15 @@ class DelveTask extends Task {
         return false;
       }
       if (delveAtlas.container) {
-        //if there's a container, mine from it instead to save time
+        // if there's a container, mine from it instead to save time
         container = delveAtlas.container;
         travelTarget = delveAtlas.container;
         range = 0;
       }
     }
 
-    let traveling = this.travel(creep, travelTarget, travelPos, range);
-    if (traveling != true) return traveling;
+    const traveling = this.travel(creep, travelTarget, travelPos, range);
+    if (traveling !== true) return traveling;
 
     if (dwarf.info.working || extractor && extractor.cooldown > 0) return undefined;
 
@@ -531,14 +553,15 @@ class DelveTask extends Task {
       return false
     }
 
-    let result = creep.harvest(delveTarget as Source | Mineral);
+    const result = creep.harvest(delveTarget );
     switch (result) {
       case OK:
         dwarf.info.working = true;
-        //use current work parts to account for depleted sources and minerals
-        let delveAmount = Math.min(creep.getActiveBodyparts(WORK) * harvestMulti, depositAmount);
+        // use current work parts to account for depleted sources and minerals
+        // eslint-disable-next-line no-case-declarations
+        const delveAmount = Math.min(creep.getActiveBodyparts(WORK) * harvestMulti, depositAmount);
 
-        //if there is internal storage, the creep is not a dedicated miner.
+        // if there is internal storage, the creep is not a dedicated miner.
         if (creep.store.getCapacity() > 0 && creep.store.getFreeCapacity() <= delveAmount) {
           if (!dwarf.info.cargo) dwarf.info.cargo = {}
 
@@ -550,7 +573,7 @@ class DelveTask extends Task {
         g.atlas.LogContainerAdd({ roomId: delveTarget.pos.roomName, containerId: container, amount: delveAmount, type: command.resourceType })
         return undefined
       default:
-        console.log("unhandled error in delvetask! " + result)
+        console.log("unhandled error in delvetask! " + result.toString())
     }
     return false;
   }
@@ -558,38 +581,40 @@ class DelveTask extends Task {
   public complete(dwarf: Dwarf, jobs: Job[], success: boolean): boolean {
     const command = dwarf.commands.shift();
 
-    //satisfy typescript
+    // satisfy typescript
     if (!command) {
       console.log("delve complete typescript error");
       return false;
     }
 
-    let job = jobs.find(j => j.id == command.jobId);
-    if (job) job.active -= command.amount-1; //track active workparts, not creeps, account for -1 in unclaimJob
+    const job = jobs.find(j => j.id === command.jobId);
+    if (job) job.active -= command.amount-1; // track active workparts, not creeps, account for -1 in unclaimJob
     return this.unclaimJob(jobs, command.jobId, 0);
+  }
+  public maxResource(job: Job): number {
+    return this.limitedTaskMaxResource(job);
   }
 }
 
-//repair structure
+// repair structure
 class RestoreTask extends Task {
-  public efficiency(simDwarf: Dwarf, simStore: SimpleStore, simPos: RoomPosition, job: Job): Evaluation {
-    let maxAmount = simStore[RESOURCE_ENERGY] || 0;
+  public efficiency(simDwarf: Dwarf, simStore: SimpleStore, simPos: RoomPosition, job: Job, timeAdjustment = 0): Evaluation {
+    const maxAmount = simStore[RESOURCE_ENERGY] || 0;
     if (maxAmount <= 0 || job.amount <= 0) {
-      console.log("efficiency restore task error: energy error");
       return { normalized: 0, score: 0, amount: 0, time: 0 };
     }
 
-    let amount = Math.min(maxAmount, job.amount);
+    const amount = Math.min(maxAmount, job.amount);
 
-    //todo: pathfinding length. v low priority
-    let distance = Tools.maxDistance(simPos, job.pos);
-    let time = distance + Math.ceil(amount / (simDwarf.info.workParts * REPAIR_POWER))
+    // todo: pathfinding length. v low priority
+    const distance = Tools.maxDistance(simPos, job.pos) + timeAdjustment;
+    const time = distance + Math.ceil(amount / (simDwarf.info.workParts * REPAIR_POWER))
 
-    //amount*lifetime / spawncost*distance
-    //priority should be a number between ~0 and ~2, default 1.
-    let score = job.priority * (amount*1500) / (simDwarf.info.spawnCost*(time+.1)); //+.1 avoids div/0 err
+    // amount*lifetime / spawncost*distance
+    // priority should be a number between ~0 and ~2, default 1.
+    const score = job.priority * (amount*1500) / (simDwarf.info.spawnCost*(time+.1)); // +.1 avoids div/0 err
 
-    return { normalized: 0, score: score, amount: amount, time: time };
+    return { normalized: 0, score, amount, time };
   }
 
   public claim(dwarf: Dwarf, creep: Creep, job: Job, amount: number): boolean {
@@ -598,7 +623,7 @@ class RestoreTask extends Task {
       return false;
     }
 
-    let command = this.generateBasicCommand(job, amount);
+    const command = this.generateBasicCommand(job, amount);
     dwarf.commands.push(command);
     return true;
   }
@@ -615,22 +640,24 @@ class RestoreTask extends Task {
       return false;
     }
 
-    let traveling = this.travel(creep, command.target, command.pos, 3)
-    if (traveling != true) return traveling
+    const traveling = this.travel(creep, command.target, command.pos, 3)
+    if (traveling !== true) return traveling
 
     if (dwarf.info.working) return undefined;
 
-    let target = Game.getObjectById(command.target) as AnyOwnedStructure;
-    if (target.hits == target.hitsMax) return true
-    let result = creep.repair(target)
+    const target = Game.getObjectById(command.target) as AnyOwnedStructure;
+    if (target.hits === target.hitsMax) return true
+    const result = creep.repair(target)
 
     switch (result) {
       case OK:
         dwarf.info.working = true;
 
-        //use current work parts to account for damage
-        let workParts = creep.getActiveBodyparts(WORK)
-        let restoreAmount = Math.min(workParts, dwarf.info.cargo[RESOURCE_ENERGY], Math.ceil((target.hitsMax - target.hits) / REPAIR_POWER));
+        // use current work parts to account for damage
+        // eslint-disable-next-line no-case-declarations
+        const workParts = creep.getActiveBodyparts(WORK)
+        // eslint-disable-next-line no-case-declarations
+        const restoreAmount = Math.min(workParts, dwarf.info.cargo[RESOURCE_ENERGY], Math.ceil((target.hitsMax - target.hits) / REPAIR_POWER));
         command.amount -= restoreAmount;
         dwarf.info.cargo[RESOURCE_ENERGY] -= restoreAmount;
         if (restoreAmount < workParts) {
@@ -650,9 +677,9 @@ class RestoreTask extends Task {
   }
 
   public complete(dwarf: Dwarf, jobs: Job[], success: boolean): boolean {
-    let command = dwarf.commands.shift();
+    const command = dwarf.commands.shift();
 
-    //satisfy typescript
+    // satisfy typescript
     if (!command) {
       console.log("restore complete typescript error");
       return false;
@@ -661,6 +688,9 @@ class RestoreTask extends Task {
     let returnAmount = 0
     if (!success) returnAmount = command.amount
     return this.unclaimJob(jobs, command.jobId, returnAmount);
+  }
+  public maxResource(job: Job): number {
+    return this.limitedTaskMaxResource(job);
   }
 }
 

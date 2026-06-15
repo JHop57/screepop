@@ -1,12 +1,12 @@
-//import Tools from "utils/Tools";
+// import Tools from "utils/Tools";
 
 import { Tools } from "utils/Tools";
 import { MY_NUMS } from "JobBoard";
 
-type RoomsAtlas = {
+interface RoomsAtlas {
   [key: string]: RoomEntry;
-};
-type RoomEntry = {
+}
+interface RoomEntry {
   routes: { [key: string]: CostMatrix };
   terrain: CostMatrix;
   terrainDate: number;
@@ -18,39 +18,41 @@ type RoomEntry = {
   updated: boolean;
   carveSites?: { [key: Id<ConstructionSite>]: CarveSite };
   wallGoal?: number;
-};
-type SourceEntry = {
+  neighbors: string[];
+}
+interface SourceEntry {
   readonly pos: Pos;
   regenRate: number;
   access: number;
   departureTime: number;
   container?: Id<AnyStoreStructure>;
-};
-type MineralEntry = {
+}
+interface MineralEntry {
   readonly pos: Pos;
   access: number;
   type: MineralConstant;
   departureTime: number;
+  harvestable: boolean;
   container?: Id<AnyStoreStructure>;
-};
-type ContainerEntry = {
+}
+interface ContainerEntry {
   readonly pos: Pos;
   active: number;
   rank: number;
   store: SimpleStore;
   max: number;
-};
-type ContainerAdd = {
+}
+interface ContainerAdd {
   roomId: string;
   containerId: Id<AnyStoreStructure>;
   amount: number;
   type: ResourceConstant;
-};
-type CarveSite = {
+}
+interface CarveSite {
   readonly pos: Pos;
   readonly type: BuildableStructureConstant;
   remaining: number;
-};
+}
 
 enum CtrlLvl {
   foreign = -2,
@@ -67,12 +69,14 @@ class WorldAtlas {
   private containerAdd: ContainerAdd[] = [];
 
   private ReadMem() {
-    let rooms: RoomsAtlas = Memory.worldAtlas || {};
+    const rooms: RoomsAtlas = Memory.worldAtlas as RoomsAtlas || {};
 
-    for (let roomId in rooms) {
-      let room = rooms[roomId];
-      room.terrain = PathFinder.CostMatrix.deserialize(Memory.worldAtlas[roomId].terrain || []);
-      for (let route in room.routes) {
+    for (const roomId in rooms) {
+      const room = rooms[roomId];
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      room.terrain = PathFinder.CostMatrix.deserialize(Memory.worldAtlas[roomId].terrain as number[] || []);
+      for (const route in room.routes) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument
         room.routes[route] = PathFinder.CostMatrix.deserialize(Memory.worldAtlas[roomId].routes[route] || []);
       }
     }
@@ -82,8 +86,9 @@ class WorldAtlas {
   public WriteMem() {
     Memory.worldAtlas = {};
 
-    for (let roomId in this.rooms) {
-      let room = this.rooms[roomId];
+    for (const roomId in this.rooms) {
+      const room = this.rooms[roomId];
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       Memory.worldAtlas[roomId] = {
         sources: room.sources,
         minerals: room.minerals,
@@ -92,10 +97,11 @@ class WorldAtlas {
         control: room.control,
         updated: room.updated,
         carveSites: room.carveSites,
-        wallGoal: room.wallGoal
+        wallGoal: room.wallGoal,
+        neighbors: room.neighbors
       };
-      //not writing pathfinding, save on mem. revisit when traffic managment done
-      /*for (let route in room.routes) {
+      // not writing pathfinding, save on mem. revisit when traffic managment done
+      /* for (let route in room.routes) {
         Memory.worldAtlas[roomId].routes[route] = room.routes[route].serialize();
       }*/
     }
@@ -109,9 +115,9 @@ class WorldAtlas {
     return this.UpdateRoomSurvey(roomId)
   }
   private InitialRoomSurvey(roomId: string): boolean {
-    let room = Game.rooms[roomId]
+    const room = Game.rooms[roomId]
 
-    let roomEntry:RoomEntry = {
+    const roomEntry:RoomEntry = {
       routes: {},
       terrain: new PathFinder.CostMatrix(),
       terrainDate: 0,
@@ -120,18 +126,19 @@ class WorldAtlas {
       containers: {},
       foreignPresence: {},
       control: CtrlLvl.unclaimed,
-      updated: true
+      updated: true,
+      neighbors: Tools.getRoomNeighbors(roomId)
     };
 
-    //handle sources
-    let terrain = room.getTerrain()
-    let rawSources = room.find(FIND_SOURCES);
-    for (let item of rawSources) {
-      //tally up spaces that are not walls surrounding a source: get max num of harvesters
+    // handle sources
+    const terrain = room.getTerrain()
+    const rawSources = room.find(FIND_SOURCES);
+    for (const item of rawSources) {
+      // tally up spaces that are not walls surrounding a source: get max num of harvesters
       let space = 0;
-      for (let direction of Tools.DIRECTIONS){
-        let testPos = Tools.getOffset(item.pos, direction);
-        if (terrain.get(testPos.x, testPos.y) != TERRAIN_MASK_WALL) { //does not account for structures
+      for (const direction of Tools.DIRECTIONS){
+        const testPos = Tools.getOffset(item.pos, direction);
+        if (terrain.get(testPos.x, testPos.y) !== TERRAIN_MASK_WALL) { // does not account for structures
             space++;
           }
       }
@@ -143,14 +150,14 @@ class WorldAtlas {
       };
     }
 
-    //handle minerals
-    let rawMinerals = room.find(FIND_MINERALS)
-    for (let item of rawMinerals) {
-      //tally up spaces that are not walls surrounding a source, get max num of harvesters
+    // handle minerals
+    const rawMinerals = room.find(FIND_MINERALS)
+    for (const item of rawMinerals) {
+      // tally up spaces that are not walls surrounding a source, get max num of harvesters
       let space = 0;
-      for (let direction of Tools.DIRECTIONS){
-        let testPos = Tools.getOffset(item.pos, direction);
-        if (terrain.get(testPos.x, testPos.y) != TERRAIN_MASK_WALL) { //does not account for structures
+      for (const direction of Tools.DIRECTIONS){
+        const testPos = Tools.getOffset(item.pos, direction);
+        if (terrain.get(testPos.x, testPos.y) !== TERRAIN_MASK_WALL) { // does not account for structures
             space++;
           }
       }
@@ -158,7 +165,8 @@ class WorldAtlas {
         pos: {x: item.pos.x, y: item.pos.y , roomName: item.pos.roomName},
         access: space,
         type: item.mineralType,
-        departureTime: 0
+        departureTime: 0,
+        harvestable: !!item.pos.findInRange(FIND_STRUCTURES, 0, { filter: s => s.structureType === STRUCTURE_EXTRACTOR })[0]
       };
     }
 
@@ -170,21 +178,21 @@ class WorldAtlas {
   }
 
   private UpdateRoomSurvey(roomId: string) {
-    let room = Game.rooms[roomId]
-    let roomAtlas = this.rooms[roomId]
+    const room = Game.rooms[roomId]
+    const roomAtlas = this.rooms[roomId]
     if(!roomAtlas) return false;
 
-    //Contsruction sites
-    let constructionSites = room.find(FIND_MY_CONSTRUCTION_SITES);
-    let carveSites: { [key: Id<ConstructionSite>]: CarveSite } = roomAtlas.carveSites || {};
-    for(let siteId in carveSites){
-      if (constructionSites.some(s => s.id == siteId)){
+    // Contsruction sites
+    const constructionSites = room.find(FIND_MY_CONSTRUCTION_SITES);
+    const carveSites: { [key: Id<ConstructionSite>]: CarveSite } = roomAtlas.carveSites || {};
+    for(const siteId in carveSites){
+      if (constructionSites.some(s => s.id === siteId)){
         continue;
       }
       delete carveSites[siteId as Id<ConstructionSite>]
     }
 
-    for(let site of constructionSites){
+    for(const site of constructionSites){
       if(carveSites[site.id]){
         carveSites[site.id].remaining = site.progressTotal - site.progress
       } else {
@@ -196,10 +204,11 @@ class WorldAtlas {
       }
     }
 
-    //containers
-    let containers: (AnyStoreStructure|Tombstone|Ruin)[] = room.find(FIND_STRUCTURES, {filter: s => s.structureType == STRUCTURE_CONTAINER || s.structureType == STRUCTURE_STORAGE});
-    let containerEntries = roomAtlas.containers || {};
-    for(let container of containers){
+    // containers
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
+    const containers: (AnyStoreStructure|Tombstone|Ruin)[] = room.find(FIND_STRUCTURES, {filter: s => s.structureType === STRUCTURE_CONTAINER || s.structureType === STRUCTURE_STORAGE}) as (AnyStoreStructure)[];
+    const containerEntries = roomAtlas.containers || {};
+    for(const container of containers){
       if(containerEntries[container.id]) continue;
 
       containerEntries[container.id] = {
@@ -210,16 +219,16 @@ class WorldAtlas {
         max: container.store.getCapacity() || 0
       }
 
-      for(let sourceId in roomAtlas.sources){
-        let source = roomAtlas.sources[sourceId as Id<Source>];
+      for(const sourceId in roomAtlas.sources){
+        const source = roomAtlas.sources[sourceId as Id<Source>];
         if(Tools.maxDistance(container.pos, source.pos) > 1 || !(container instanceof StructureContainer)) continue;
 
         source.container = container.id;
         containerEntries[container.id].rank = MY_NUMS.STABLE_SOURCE_RANK;
         break;
       }
-      for(let mineralId in roomAtlas.minerals){
-        let mineral = roomAtlas.minerals[mineralId as Id<Mineral>];
+      for(const mineralId in roomAtlas.minerals){
+        const mineral = roomAtlas.minerals[mineralId as Id<Mineral>];
         if(Tools.maxDistance(container.pos, mineral.pos) > 1 || !(container instanceof StructureContainer)) continue;
 
         mineral.container = container.id;
@@ -227,15 +236,15 @@ class WorldAtlas {
         break;
       }
 
-      if(container instanceof StructureStorage && container.structureType == STRUCTURE_STORAGE){
+      if(container instanceof StructureStorage && container.structureType === STRUCTURE_STORAGE){
         containerEntries[container.id].rank = MY_NUMS.CENTRAL_BUFFER_RANK;
       } else if(container instanceof Tombstone || container instanceof Ruin){
         containerEntries[container.id].rank = MY_NUMS.UNSTABLE_SOURCE_RANK;
       }
     }
 
-    let resourcePiles = room.find(FIND_DROPPED_RESOURCES);
-    for (let pile of resourcePiles){
+    const resourcePiles = room.find(FIND_DROPPED_RESOURCES);
+    for (const pile of resourcePiles){
       if(containerEntries[pile.id]) continue;
       containerEntries[pile.id] = {
         pos: {x: pile.pos.x, y: pile.pos.y , roomName: pile.pos.roomName},
@@ -246,25 +255,25 @@ class WorldAtlas {
       }
     }
 
-    let wrecks = room.find(FIND_TOMBSTONES);
+    const wrecks = room.find(FIND_TOMBSTONES);
 
-    for(let containerId in containerEntries){
-      let container = containers.find(c => c.id == containerId);
+    for(const containerId in containerEntries){
+      const container = containers.find(c => c.id === containerId);
       if(!container){
         delete containerEntries[containerId as Id<AnyStoreStructure>]
         continue;
       }
 
-      if(containerEntries[containerId as Id<AnyStoreStructure>].active == 0){
+      if(containerEntries[containerId as Id<AnyStoreStructure>].active === 0){
         containerEntries[containerId as Id<AnyStoreStructure>].store = container.store;
       }
     }
 
-    let controller = room.controller;
+    const controller = room.controller;
     if(controller){
       if(controller.my) roomAtlas.control = CtrlLvl.colonized;
-      else if(controller.reservation && controller.reservation.username == SYSTEM_USERNAME) roomAtlas.control = CtrlLvl.reserved;
-      else if(controller.reservation || controller.owner?.username != "Screeps") roomAtlas.control = CtrlLvl.foreign;
+      else if(controller.reservation && controller.reservation.username === SYSTEM_USERNAME) roomAtlas.control = CtrlLvl.reserved;
+      else if(controller.reservation || controller.owner?.username !== "Screeps") roomAtlas.control = CtrlLvl.foreign;
     }
     return true;
   }
@@ -272,10 +281,10 @@ class WorldAtlas {
     this.containerAdd.push(add)
   }
   public doContainerAdds(){
-    for(let add of this.containerAdd){
-      let room = this.rooms[add.roomId]
+    for(const add of this.containerAdd){
+      const room = this.rooms[add.roomId]
       if(!room) continue;
-      let container = room.containers[add.containerId]
+      const container = room.containers[add.containerId]
       if(!container) continue;
       container.store[add.type] = (container.store[add.type] || 0) + add.amount
     }
