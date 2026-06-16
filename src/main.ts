@@ -1,72 +1,75 @@
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/*
-Telos, ᏘᎼᏗ
-June 2025
-screeps bot rewrite based on https://github.com/screepers/screeps-typescript-starter
-reason: had enough of type errors in runtime, implement task manager type systems
-*/
-
-import { WorldAtlas } from "WorldAtlas";
-import { JobBoard } from "JobBoard";
-import Hud from "utils/Hud";
-import {Tools} from "utils/Tools";
-import { creepHandler } from "Foreman";
-import { Prioritizer } from "Prioritizer";
+import { ErrorMapper } from "utils/ErrorMapper"
+import * as roleHarvester from 'roleHarvester'
+import * as roleUpgrader from 'roleUpgrader'
+import * as roleBuilder from 'roleBuilder'
 
 declare global {
+  /*
+    Example types, expand on these or remove them and add your own.
+    Note: Values, properties defined here do no fully *exist* by this type definition alone.
+          You must also give them an implementation if you would like to use them. (ex. actually setting a `role` property in a Creeps memory)
+
+    Types added in this `global` block are in an ambient, global context. This is needed because `main.ts` is a module file (uses import or export).
+    Interfaces matching on name from @types/screeps will be merged. This is how you can extend the 'built-in' interfaces from @types/screeps.
+  */
+  // Memory extension samples
   interface Memory {
-    uuid: number;
-    log: any;
-    worldAtlas: any;
-    jobBoard: any;
-    prioritizer: any;
+    uuid: number
+    log: any
   }
 
-  interface Creep {
-    _say: (message: string, public?: boolean) => 0|-1|-4;
+  interface CreepMemory {
+    role: string
+    room: string
+    working: boolean
+    upgrading: boolean
+    building: boolean
   }
-
 }
 // Syntax for adding properties to `global` (ex "global.log")
 declare const global: {
-  log: any;
-  g: {
-    atlas: WorldAtlas;
-    jobBoard: JobBoard;
-    hud: Hud;
+  log: any
+}
+
+// When compiling TS to JS and bundling with rollup, the line numbers and file names in error messages change
+// This utility uses source maps to get the line numbers and file names of the original, TS source code
+export const loop = ErrorMapper.wrapLoop(() => {
+  console.log(`Current game tick is ${Game.time}`)
+
+  // const tower = Game.getObjectById('c999f5e34c74695e5ba18c68' as Id<StructureTower>) as StructureTower | null;
+  // if(tower) {
+  //     const closestDamagedStructure = tower.pos.findClosestByRange(FIND_STRUCTURES, {
+  //         filter: (structure) => structure.hits < structure.hitsMax
+  //     });
+  //     if(closestDamagedStructure) {
+  //         tower.repair(closestDamagedStructure);
+  //     }
+
+  //     const closestHostile = tower.pos.findClosestByRange(FIND_HOSTILE_CREEPS);
+  //     if(closestHostile) {
+  //         tower.attack(closestHostile);
+  //     }
+  // }
+
+  for(const name in Game.creeps) {
+      const creep = Game.creeps[name];
+      if(creep.memory.role == 'harvester') {
+          roleHarvester.run(creep);
+      }
+      if(creep.memory.role == 'upgrader') {
+          roleUpgrader.run(creep);
+      }
+      if(creep.memory.role == 'builder') {
+          roleBuilder.run(creep);
+      }
   }
-}
-
-// monkeypatching
-// eslint-disable-next-line no-underscore-dangle, @typescript-eslint/unbound-method
-const _say = Creep.prototype.say;
-Creep.prototype.say = function(message, sayPublic = true) {
-    return _say.call(this, message, sayPublic);
-};
-
-// declare my global variables, used 'g' instead of 'global' because it's shorter and I'm lazy.
-global.g = {atlas: new WorldAtlas(), jobBoard: new JobBoard(), hud: new Hud()};
-
-for( const room in Game.rooms){
-  g.atlas.SurveyRoom(room)
-}
-g.atlas.WriteMem()
-
-const prioritizer = new Prioritizer();
-for(const updateFunction of creepHandler.getUpdateFunctions()){
-  prioritizer.schedule(updateFunction.func, updateFunction.name, 1, 10);
-}
-
-module.exports.loop = function (){
-  g.hud.makeElement("", Game.spawns.Spawn1.pos);
-  prioritizer.run();
-  for(const creepId in Game.creeps){
-    const creep = Game.creeps[creepId];
-    if(creep.spawning) continue;
-    creepHandler.assignCreep(creep);
+  
+  // Automatically delete memory of missing creeps
+  for (const name in Memory.creeps) {
+    if (!(name in Game.creeps)) {
+      delete Memory.creeps[name]
+    }
   }
-  creepHandler.run();
-  prioritizer.writeMem();
+})
 
-  g.hud.display();
-}
+global.log = (...args: any[]) => console.log("LOG:", ...args)
