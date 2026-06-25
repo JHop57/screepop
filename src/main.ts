@@ -38,6 +38,7 @@ declare const global: {
     log: any;
     workOrders: WorkOrder[];
 };
+global.workOrders = [];
 
 let log = Memory.log || [];
 if (Game.time % 100 == 0) {
@@ -54,27 +55,32 @@ export const loop = () => {
     for (const name in Game.creeps) {
         const creep = Game.creeps[name];
 
-        if (global.workOrders.length === 0) {
+        if (jms.workOrders.length === 0) {
             var res = creep.room.find(FIND_SOURCES);
 
             const taskList:Task[] = [];
             taskList.push({ step: Steps.Harvest, targetId: res[0].id, resourceType: RESOURCE_ENERGY, amount: 50 });
             var targets = creep.room.find(FIND_STRUCTURES, {
                 filter: structure => {
-                    return (
-                        (structure.structureType == STRUCTURE_EXTENSION ||
-                            structure.structureType == STRUCTURE_SPAWN ||
-                            structure.structureType == STRUCTURE_TOWER) &&
-                        structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0
-                    );
+                    // return (
+                    //     (structure.structureType == STRUCTURE_EXTENSION ||
+                    //         structure.structureType == STRUCTURE_SPAWN ||
+                    //         structure.structureType == STRUCTURE_TOWER) &&
+                    //     structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+                    // );
+                    return (structure.structureType == STRUCTURE_CONTROLLER)
                 }
             });
-            taskList.push({ step: Steps.Transfer, targetId: targets[0].id, resourceType: RESOURCE_ENERGY });
+            taskList.push({ step: Steps.Upgrade, targetId: targets[0].id, resourceType: RESOURCE_ENERGY });
 
             var a:WorkOrder = newWorkOrder(taskList);
             jms.addWorkOrder(a);
             creep.memory.workOrderId = a.id;
             creep.memory.workOrderStep = 0;
+            if(!creep.memory.workOrderId){
+                creep.memory.workOrderId = a.id;
+                creep.memory.workOrderStep = 0;
+            }
         }
         if(creep.memory.workOrderId) {
             jms.executeStep(creep);
@@ -82,7 +88,7 @@ export const loop = () => {
     }
 
     let harvesters = _.filter(Game.creeps, (creep: Creep) => creep.memory.role == "harvester");
-    console.log("Harvesters: " + harvesters.length);
+    //console.log("Harvesters: " + harvesters.length);
 
     if (harvesters.length < 2) {
         let newName = "Harvester" + Game.time;
