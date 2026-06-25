@@ -1,10 +1,11 @@
 //import { ErrorMapper } from "utils/ErrorMapper"
 import * as _ from "lodash";
-import * as roleHarvester from "roleHarvester";
+//import * as roleHarvester from "roleHarvester";
 // import * as roleUpgrader from 'roleUpgrader'
 // import * as roleBuilder from 'roleBuilder'
-import { Steps, Task, WorkOrder } from "./workOrder";
-import { Stack } from "./utils/stack";
+import {jms } from "./jms/jobManagementSystem";
+import {WorkOrder, Steps, Task, newWorkOrder } from "./jms/workOrder";
+//import { Stack } from "./utils/stack";
 
 declare global {
     /*
@@ -24,7 +25,8 @@ declare global {
 
     interface CreepMemory {
         role: string;
-        workOrder?: WorkOrder;
+        workOrderId?: number;
+        workOrderStep?: number;
         //room: string
         // working: boolean
         // upgrading: boolean
@@ -42,44 +44,21 @@ if (Game.time % 100 == 0) {
     Memory.log = log;
 }
 
-export
+
 
 // When compiling TS to JS and bundling with rollup, the line numbers and file names in error messages change
 // This utility uses source maps to get the line numbers and file names of the original, TS source code
 //export const loop = ErrorMapper.wrapLoop(() => {
 export const loop = () => {
 
-
-    // variable defined as dictionary {[key]:value}
-    // Id<Source> is a type that represents the unique identifier of a Source object in Screeps
-    //sources: { [key: Id<Source>]: SourceEntry  };
-
-    // const tower = Game.getObjectById('c999f5e34c74695e5ba18c68' as Id<StructureTower>) as StructureTower | null;
-    // if(tower) {
-    //     const closestDamagedStructure = tower.pos.findClosestByRange(FIND_STRUCTURES, {
-    //         filter: (structure) => structure.hits < structure.hitsMax
-    //     });
-    //     if(closestDamagedStructure) {
-    //         tower.repair(closestDamagedStructure);
-    //     }
-
-    //     const closestHostile = tower.pos.findClosestByRange(FIND_HOSTILE_CREEPS);
-    //     if(closestHostile) {
-    //         tower.attack(closestHostile);
-    //     }
-    // }
-
     for (const name in Game.creeps) {
         const creep = Game.creeps[name];
-        if(creep.memory.workOrder.status === "aborted" || creep.memory.workOrder.status === "completed") {
-            creep.memory.workOrder = undefined;
-        }
 
-        if (!creep.memory.workOrder && global.workOrders.size === 0) {
+        if (global.workOrders.length === 0) {
             var res = creep.room.find(FIND_SOURCES);
 
-            const stack = new Stack<Task>();
-            stack.push({ step: Steps.Harvest, targetId: res[0].id, resourceType: RESOURCE_ENERGY, amount: 50 });
+            const taskList:Task[] = [];
+            taskList.push({ step: Steps.Harvest, targetId: res[0].id, resourceType: RESOURCE_ENERGY, amount: 50 });
             var targets = creep.room.find(FIND_STRUCTURES, {
                 filter: structure => {
                     return (
@@ -90,14 +69,15 @@ export const loop = () => {
                     );
                 }
             });
-            stack.push({ step: Steps.Transfer, targetId: targets[0].id, resourceType: RESOURCE_ENERGY });
+            taskList.push({ step: Steps.Transfer, targetId: targets[0].id, resourceType: RESOURCE_ENERGY });
 
-            var a = creep.memory.workOrder as WorkOrder;
-            global.workOrders.push(a);
-            creep.memory.workOrder = a;
+            var a:WorkOrder = newWorkOrder(taskList);
+            jms.addWorkOrder(a);
+            creep.memory.workOrderId = a.id;
+            creep.memory.workOrderStep = 0;
         }
-        if(creep.memory.workOrder) {
-            creep.memory.workOrder.executeStep(creep);
+        if(creep.memory.workOrderId) {
+            jms.executeStep(creep);
         }
     }
 
@@ -110,23 +90,23 @@ export const loop = () => {
         Game.spawns["Spawn1"].spawnCreep([WORK, CARRY, MOVE], newName, { memory: { role: "harvester" } });
     }
 
-    let builder = _.filter(Game.creeps, (creep: Creep) => creep.memory.role == "builder");
-    console.log("Builders: " + builder.length);
+    // let builder = _.filter(Game.creeps, (creep: Creep) => creep.memory.role == "builder");
+    // console.log("Builders: " + builder.length);
 
-    if (builder.length < 2) {
-        let newName = "Builder" + Game.time;
-        console.log("Spawning new builder: " + newName);
-        Game.spawns["Spawn1"].spawnCreep([WORK, CARRY, MOVE], newName, { memory: { role: "builder" } });
-    }
+    // if (builder.length < 2) {
+    //     let newName = "Builder" + Game.time;
+    //     console.log("Spawning new builder: " + newName);
+    //     Game.spawns["Spawn1"].spawnCreep([WORK, CARRY, MOVE], newName, { memory: { role: "builder" } });
+    // }
 
-    let upgrader = _.filter(Game.creeps, (creep: Creep) => creep.memory.role == "upgrader");
-    console.log("Upgraders: " + upgrader.length);
+    // let upgrader = _.filter(Game.creeps, (creep: Creep) => creep.memory.role == "upgrader");
+    // console.log("Upgraders: " + upgrader.length);
 
-    if (upgrader.length < 2) {
-        let newName = "Upgrader" + Game.time;
-        console.log("Spawning new upgrader: " + newName);
-        Game.spawns["Spawn1"].spawnCreep([WORK, CARRY, MOVE], newName, { memory: { role: "upgrader" } });
-    }
+    // if (upgrader.length < 2) {
+    //     let newName = "Upgrader" + Game.time;
+    //     console.log("Spawning new upgrader: " + newName);
+    //     Game.spawns["Spawn1"].spawnCreep([WORK, CARRY, MOVE], newName, { memory: { role: "upgrader" } });
+    // }
 
     if (Game.spawns["Spawn1"].spawning) {
         var spawningCreep = Game.creeps[Game.spawns["Spawn1"].spawning.name];

@@ -2,7 +2,7 @@ import {assert} from "chai";
 import {afterEach, beforeEach, describe, it} from "mocha";
 import * as sinon from "sinon";
 
-let WorkOrder: typeof import("../../src/workOrder").WorkOrder;
+let WorkOrder: typeof import("../../src/jms/workOrder").WorkOrder;
 
 describe("WorkOrder", () => {
   beforeEach(() => {
