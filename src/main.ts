@@ -3,8 +3,8 @@ import * as _ from "lodash";
 //import * as roleHarvester from "roleHarvester";
 // import * as roleUpgrader from 'roleUpgrader'
 // import * as roleBuilder from 'roleBuilder'
-import {jms } from "./jms/jobManagementSystem";
-import {WorkOrder, Steps, Task, newWorkOrder } from "./jms/workOrder";
+import {jms,WorkOrder,Task, Steps } from "./jms/jobManagementSystem";
+//import {WorkOrder, Steps, Task, newWorkOrder } from "./jms/workOrder";
 //import { Stack } from "./utils/stack";
 
 declare global {
@@ -21,6 +21,7 @@ declare global {
         uuid: number;
         log: any;
         role: string;
+        workOrders: WorkOrder[];
     }
 
     interface CreepMemory {
@@ -36,83 +37,67 @@ declare global {
 // Syntax for adding properties to `global` (ex "global.log")
 declare const global: {
     log: any;
-    workOrders: WorkOrder[];
 };
-global.workOrders = [];
 
 let log = Memory.log || [];
-if (Game.time % 100 == 0) {
-    Memory.log = log;
-}
-
+jms.workOrders = Memory.workOrders || [];
 
 
 // When compiling TS to JS and bundling with rollup, the line numbers and file names in error messages change
 // This utility uses source maps to get the line numbers and file names of the original, TS source code
 //export const loop = ErrorMapper.wrapLoop(() => {
 export const loop = () => {
+    let harvesterCount: number = 0;
+    let builderCount: number = 0;
+    let upgraderCount: number = 0;
 
     for (const name in Game.creeps) {
         const creep = Game.creeps[name];
 
-        if (jms.workOrders.length === 0) {
-            var res = creep.room.find(FIND_SOURCES);
+        if(creep.memory.role === "harvester") {
+            harvesterCount++;
+        }
+        if(creep.memory.role === "builder"){
+            builderCount++;
+        }
+        if(creep.memory.role === "upgrader"){
+            upgraderCount++;
+        }
 
-            const taskList:Task[] = [];
-            taskList.push({ step: Steps.Harvest, targetId: res[0].id, resourceType: RESOURCE_ENERGY, amount: 50 });
-            var targets = creep.room.find(FIND_STRUCTURES, {
-                filter: structure => {
-                    // return (
-                    //     (structure.structureType == STRUCTURE_EXTENSION ||
-                    //         structure.structureType == STRUCTURE_SPAWN ||
-                    //         structure.structureType == STRUCTURE_TOWER) &&
-                    //     structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0
-                    // );
-                    return (structure.structureType == STRUCTURE_CONTROLLER)
-                }
-            });
-            taskList.push({ step: Steps.Upgrade, targetId: targets[0].id, resourceType: RESOURCE_ENERGY });
-
-            var a:WorkOrder = newWorkOrder(taskList);
-            jms.addWorkOrder(a);
-            creep.memory.workOrderId = a.id;
+        const wo = jms.workOrders.find(WorkOrder => WorkOrder.id === creep.memory.workOrderId);
+        if(wo === undefined){
+            creep.memory.workOrderId = undefined;
             creep.memory.workOrderStep = 0;
-            if(!creep.memory.workOrderId){
-                creep.memory.workOrderId = a.id;
-                creep.memory.workOrderStep = 0;
-            }
+        }
+        if (creep.memory.workOrderId === undefined) {
+            jms.assignWorkOrder(creep);
         }
         if(creep.memory.workOrderId) {
             jms.executeStep(creep);
         }
     }
 
-    let harvesters = _.filter(Game.creeps, (creep: Creep) => creep.memory.role == "harvester");
-    //console.log("Harvesters: " + harvesters.length);
 
-    if (harvesters.length < 2) {
+    if (harvesterCount < 2) {
         let newName = "Harvester" + Game.time;
         console.log("Spawning new harvester: " + newName);
         Game.spawns["Spawn1"].spawnCreep([WORK, CARRY, MOVE], newName, { memory: { role: "harvester" } });
     }
 
-    // let builder = _.filter(Game.creeps, (creep: Creep) => creep.memory.role == "builder");
-    // console.log("Builders: " + builder.length);
-
-    // if (builder.length < 2) {
-    //     let newName = "Builder" + Game.time;
-    //     console.log("Spawning new builder: " + newName);
-    //     Game.spawns["Spawn1"].spawnCreep([WORK, CARRY, MOVE], newName, { memory: { role: "builder" } });
-    // }
+    if (builderCount < 1) {
+        let newName = "Builder" + Game.time;
+        console.log("Spawning new builder: " + newName);
+        Game.spawns["Spawn1"].spawnCreep([WORK, CARRY, MOVE], newName, { memory: { role: "builder" } });
+    }
 
     // let upgrader = _.filter(Game.creeps, (creep: Creep) => creep.memory.role == "upgrader");
     // console.log("Upgraders: " + upgrader.length);
 
-    // if (upgrader.length < 2) {
-    //     let newName = "Upgrader" + Game.time;
-    //     console.log("Spawning new upgrader: " + newName);
-    //     Game.spawns["Spawn1"].spawnCreep([WORK, CARRY, MOVE], newName, { memory: { role: "upgrader" } });
-    // }
+    if (upgraderCount < 1) {
+        let newName = "Upgrader" + Game.time;
+        console.log("Spawning new upgrader: " + newName);
+        Game.spawns["Spawn1"].spawnCreep([WORK, CARRY, MOVE], newName, { memory: { role: "upgrader" } });
+    }
 
     if (Game.spawns["Spawn1"].spawning) {
         var spawningCreep = Game.creeps[Game.spawns["Spawn1"].spawning.name];
@@ -126,26 +111,28 @@ export const loop = () => {
 
 
 
-    // Clean up completed or aborted work orders
-    for (const wo of global.workOrders) {
-        if(wo.status === "aborted" || wo.status === "completed") {
-            findIndexAndRemove(wo.id);
-        }
 
-    }
     // Automatically delete memory of missing creeps
     for (const name in Memory.creeps) {
         if (!(name in Game.creeps)) {
             delete Memory.creeps[name];
         }
     }
+    if (Game.time % 10 == 0) {
+        jms.workOrders.forEach(element => {
+            if(element.status === "in-progress" && Game.time - element.heartbeatTime > 20) {
+                element.status = "completed"
+            }
+        });
+
+        // Clean up completed or aborted work orders
+        jms.workOrders = jms.workOrders.filter(x => x.status != "completed");
+
+        Memory.log = log;
+        Memory.workOrders = jms.workOrders;
+    }
 };
 
 global.log = (...args: any[]) => console.log("LOG:", ...args);
-function findIndexAndRemove(id: number) {
-    const indexToRemove = global.workOrders.findIndex(item => item.id === id);
-    if (indexToRemove !== -1) {
-        global.workOrders.splice(indexToRemove, 1); // Removes 1 item at the found index
-    }
-}
+
 
