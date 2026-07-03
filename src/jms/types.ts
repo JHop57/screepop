@@ -3,15 +3,31 @@ export const Steps = {
     Harvest: "🔄",
     Transfer: "📦",
     Upgrade: "⚡",
-    Build: "🏗️",
+    Build: "🚧",
     Move: "🚚"
-} as const;
 //🚧
-
-// 2. Extract the type from the object values
+} as const;
 export type Steps = (typeof Steps)[keyof typeof Steps];
+
+export const WStatus = {
+    Pending: "pending",
+    InProgress: "in-progress",
+    Completed: "completed",
+    Aborted: "aborted"
+} as const;
+export type WStatus = (typeof WStatus)[keyof typeof WStatus];
+
+export const WCategory = {
+    Controller: "🎮",
+    Construction: "🏗️"
+} as const;
+export type WCategory = (typeof WCategory)[keyof typeof WCategory];
+
+
 export type TaskTarget = Id<Source | Structure | ConstructionSite | StructureController>;
-export type WoStatus =  "pending" | "in-progress" | "completed" | "aborted";
+
+
+
 
 export interface Task {
     readonly step: Steps;
@@ -24,6 +40,6 @@ export interface WorkOrder {
     readonly id: number;
     readonly birthTime: number;
     heartbeatTime: number;
-    status: WoStatus;
+    status: WStatus;
     tasks: Task[];
 }

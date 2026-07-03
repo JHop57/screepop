@@ -1,5 +1,5 @@
 import { Worker } from "cluster";
-import {WorkOrder, Task, Steps} from './types'
+import {WorkOrder, Task, Steps, WStatus} from './types'
 import * as WO from "./workOrder";
 
 class Jms {
@@ -18,7 +18,8 @@ class Jms {
     }
     public assignWorkOrder(creep: Creep):void{
         var job = this.AddUpgradeControllerJob(creep);
-        job.status = "in-progress"
+        job.status = WStatus.InProgress;
+
         creep.memory.workOrderId = job.id;
         creep.memory.workOrderStep = 0;
 
@@ -167,8 +168,8 @@ class Jms {
         }
 console.log(`${creep.name}:executeStep: workOrder ${wo.id} - ${wo.status}`);
 
-        if(wo.status === "pending")
-            wo.status = "in-progress";
+        if(wo.status === WStatus.Pending)
+            wo.status = WStatus.InProgress;
 
         let StepId =  creep.memory.workOrderStep;
         if(StepId === undefined)
@@ -218,4 +219,4 @@ console.log(`${creep.name}:executeStep: workOrder ${wo.id} - ${wo.status}`);
 }
 
 const jms = new Jms();
-export {jms, WO, WorkOrder, Steps, Task};
+export {jms, WO, WorkOrder, Steps, Task, WStatus};

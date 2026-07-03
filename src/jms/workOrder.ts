@@ -1,5 +1,5 @@
 import { create } from 'lodash';
-import {WorkOrder, Task, Steps} from './types'
+import {WorkOrder, Task, Steps, WStatus, WCategory} from './types'
 
 // A utility function to bundle independent tasks into an array
 const bundleTasks = (...tasks: Task[]): Task[] => tasks;
@@ -9,7 +9,8 @@ const createWorkOrder = (tasks: Task[]): WorkOrder => ({
     id: Math.floor(Math.random() * 65534),
     birthTime: Game.time,
     heartbeatTime: Game.time,
-    status: "pending",
+    category: WCategory.Controller,
+    status: WStatus.Pending,
     tasks: tasks
 });
 
@@ -28,8 +29,8 @@ export function moveAndHarvest(sourceId: Id<Source>, amount: number, containerId
 export function upgradeController(id: Id<StructureController>, sourceId: Id<Source>, amount: number):WorkOrder {
     return pipe(
         bundleTasks(
-            { step: Steps.Harvest, targetId: sourceId, resourceType: RESOURCE_ENERGY, amount: amount},
-            {step: Steps.Upgrade, targetId: id}
+            { step: Steps.Harvest, targetId: sourceId, resourceType: RESOURCE_ENERGY, amount: amount },
+            { step: Steps.Upgrade, targetId: id }
         ),
         createWorkOrder
     );
@@ -38,8 +39,8 @@ export function upgradeController(id: Id<StructureController>, sourceId: Id<Sour
 export function buildSite(id: Id<ConstructionSite>, sourceId: Id<Source>, amount: number):WorkOrder {
     return pipe(
         bundleTasks(
-            { step: Steps.Harvest, targetId: sourceId, resourceType: RESOURCE_ENERGY, amount: amount},
-            {step: Steps.Build, targetId: id}
+            { step: Steps.Harvest, targetId: sourceId, resourceType: RESOURCE_ENERGY, amount: amount },
+            { step: Steps.Build, targetId: id }
         ),
         createWorkOrder
     );
@@ -48,7 +49,7 @@ export function buildSite(id: Id<ConstructionSite>, sourceId: Id<Source>, amount
 export function harvestEnergy(id: Id<Source>, amount: number):WorkOrder {
     return pipe(
         bundleTasks(
-            {step: Steps.Harvest, targetId: id, resourceType: RESOURCE_ENERGY, amount: amount}
+            { step: Steps.Harvest, targetId: id, resourceType: RESOURCE_ENERGY, amount: amount }
         ),
         createWorkOrder
     );
@@ -56,8 +57,8 @@ export function harvestEnergy(id: Id<Source>, amount: number):WorkOrder {
 
 export function transferEnergy(id: Id<Structure>, amount: number):WorkOrder {
     return pipe(
-        bundleTasks({
-            step: Steps.Transfer, targetId: id, resourceType: RESOURCE_ENERGY, amount: amount}
+        bundleTasks(
+            { step: Steps.Transfer, targetId: id, resourceType: RESOURCE_ENERGY, amount: amount }
         ),
         createWorkOrder
     );
