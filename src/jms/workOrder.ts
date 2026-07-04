@@ -1,30 +1,30 @@
 import { create } from 'lodash';
-import {WorkOrder, Task, Steps, WStatus, WCategory} from './types'
+import {WorkOrder, Task, Steps, OrderStatus, OrderClass} from './types'
 
 // A utility function to bundle independent tasks into an array
 const bundleTasks = (...tasks: Task[]): Task[] => tasks;
 
 // Takes an array of tasks and wraps them inside a fresh WorkOrder
-const createWorkOrder = (tasks: Task[]): WorkOrder => ({
+const createWorkOrder = (orderClass: OrderClass) => (tasks: Task[]): WorkOrder => ({
     id: Math.floor(Math.random() * 65534),
     birthTime: Game.time,
     heartbeatTime: Game.time,
-    category: WCategory.Controller,
-    status: WStatus.Pending,
+    class: orderClass,
+    status: OrderStatus.Pending,
     tasks: tasks
 });
 
 
-// Example: Create a chained pipeline that creates an explicit multi-task WorkOrder
-export function moveAndHarvest(sourceId: Id<Source>, amount: number, containerId: Id<StructureContainer>): WorkOrder {
-    return pipe(
-        bundleTasks(
-            { step: Steps.Move, targetId: containerId }, // Task 1: Go to container
-            { step: Steps.Harvest, targetId: sourceId, resourceType: RESOURCE_ENERGY, amount } // Task 2: Harvest
-        ),
-        createWorkOrder // Wraps the array of 2 tasks into 1 WorkOrder
-    );
-}
+// // Example: Create a chained pipeline that creates an explicit multi-task WorkOrder
+// export function moveAndHarvest(sourceId: Id<Source>, amount: number, containerId: Id<StructureContainer>): WorkOrder {
+//     return pipe(
+//         bundleTasks(
+//             { step: Steps.Move, targetId: containerId }, // Task 1: Go to container
+//             { step: Steps.Harvest, targetId: sourceId, resourceType: RESOURCE_ENERGY, amount } // Task 2: Harvest
+//         ),
+//         createWorkOrder(OrderClass.STRUCTURE_CONTAINER)
+//     );
+// }
 
 export function upgradeController(id: Id<StructureController>, sourceId: Id<Source>, amount: number):WorkOrder {
     return pipe(
@@ -32,7 +32,7 @@ export function upgradeController(id: Id<StructureController>, sourceId: Id<Sour
             { step: Steps.Harvest, targetId: sourceId, resourceType: RESOURCE_ENERGY, amount: amount },
             { step: Steps.Upgrade, targetId: id }
         ),
-        createWorkOrder
+        createWorkOrder(OrderClass.STRUCTURE_CONTROLLER)
     );
 }
 
@@ -42,7 +42,7 @@ export function buildSite(id: Id<ConstructionSite>, sourceId: Id<Source>, amount
             { step: Steps.Harvest, targetId: sourceId, resourceType: RESOURCE_ENERGY, amount: amount },
             { step: Steps.Build, targetId: id }
         ),
-        createWorkOrder
+        createWorkOrder(OrderClass.MAX_CONSTRUCTION_SITES)
     );
 }
 
@@ -51,7 +51,7 @@ export function harvestEnergy(id: Id<Source>, amount: number):WorkOrder {
         bundleTasks(
             { step: Steps.Harvest, targetId: id, resourceType: RESOURCE_ENERGY, amount: amount }
         ),
-        createWorkOrder
+        createWorkOrder(OrderClass.STRUCTURE_SPAWN)
     );
 }
 
@@ -60,7 +60,7 @@ export function transferEnergy(id: Id<Structure>, amount: number):WorkOrder {
         bundleTasks(
             { step: Steps.Transfer, targetId: id, resourceType: RESOURCE_ENERGY, amount: amount }
         ),
-        createWorkOrder
+        createWorkOrder(OrderClass.STRUCTURE_EXTENSION)
     );
 }
 

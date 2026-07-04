@@ -9,25 +9,23 @@ export const Steps = {
 } as const;
 export type Steps = (typeof Steps)[keyof typeof Steps];
 
-export const WStatus = {
+export const OrderStatus = {
     Pending: "pending",
     InProgress: "in-progress",
     Completed: "completed",
     Aborted: "aborted"
 } as const;
-export type WStatus = (typeof WStatus)[keyof typeof WStatus];
+export type OrderStatus = (typeof OrderStatus)[keyof typeof OrderStatus];
 
-export const WCategory = {
-    Controller: "🎮",
-    Construction: "🏗️"
+export const OrderClass = {
+    STRUCTURE_SPAWN: 1,
+    STRUCTURE_CONTROLLER: 4,
+    STRUCTURE_EXTENSION: 1,
+    MAX_CONSTRUCTION_SITES: 1
 } as const;
-export type WCategory = (typeof WCategory)[keyof typeof WCategory];
-
+export type OrderClass = (typeof OrderClass)[keyof typeof OrderClass];
 
 export type TaskTarget = Id<Source | Structure | ConstructionSite | StructureController>;
-
-
-
 
 export interface Task {
     readonly step: Steps;
@@ -40,6 +38,7 @@ export interface WorkOrder {
     readonly id: number;
     readonly birthTime: number;
     heartbeatTime: number;
-    status: WStatus;
+    class: OrderClass;
+    status: OrderStatus;
     tasks: Task[];
 }

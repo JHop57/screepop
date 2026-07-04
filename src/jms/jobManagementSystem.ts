@@ -1,6 +1,12 @@
-import { Worker } from "cluster";
-import {WorkOrder, Task, Steps, WStatus} from './types'
+import {WorkOrder, Task, Steps, OrderStatus, OrderClass} from './types'
 import * as WO from "./workOrder";
+
+const Plan = {
+    SPAWN: 1,
+    CONTROLLER: 4,
+    STRUCTURE_EXTENSION:2,
+    CONSTRUCTION: 1
+};
 
 class Jms {
     /*scribbles: Critical,high,medium,low*/
@@ -12,70 +18,66 @@ class Jms {
     public addWorkOrder(wo:WorkOrder):void {
         this.workOrders.push(wo);
     }
-    public initializeWorkorders(creep:Creep){
-        this.AddUpgradeControllerJob(creep);
-
+    public initializeWorkorders(room: Room):void {
+        let controllerCount = this.workOrders.filter(wo => wo.class === OrderClass.STRUCTURE_CONTROLLER).length;
+        let constructionCount = this.workOrders.filter(wo => wo.class === OrderClass.MAX_CONSTRUCTION_SITES).length;
+        let spawnCount = this.workOrders.filter(wo => wo.class === OrderClass.STRUCTURE_SPAWN).length;
+        if(controllerCount < Plan.CONTROLLER){
+            var job = this.AddUpgradeControllerJob(room);
+            this.addWorkOrder(job);
+        }
+        if(constructionCount < Plan.CONSTRUCTION){
+            // eventually replace with something to create a wo when a site is created
+            var sites: ConstructionSite[] = room.find(FIND_MY_CONSTRUCTION_SITES);
+            if (sites.length > 0) {
+                var job = this.AddBuildConstructionJob(room, sites);
+                this.addWorkOrder(job);
+            }
+        }
     }
-    public assignWorkOrder(creep: Creep):void{
-        var job = this.AddUpgradeControllerJob(creep);
-        job.status = WStatus.InProgress;
 
+    public assignWorkOrder(creep: Creep):void{
+        var job = this.workOrders.find(WorkOrder => WorkOrder.status === OrderStatus.Pending);
+        if(job === undefined){
+            console.log(`${creep.name}:assignWorkOrder:no workOrder`);
+            return;
+        }
         creep.memory.workOrderId = job.id;
         creep.memory.workOrderStep = 0;
-
-            // var targets = creep.room.find(FIND_STRUCTURES, {
-            //     filter: structure => {
-            //         // return (
-            //         //     (structure.structureType == STRUCTURE_EXTENSION ||
-            //         //         structure.structureType == STRUCTURE_SPAWN ||
-            //         //         structure.structureType == STRUCTURE_TOWER) &&
-            //         //     structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0
-            //         // );
-            //         return (structure.structureType == STRUCTURE_CONTROLLER)
-            //     }
-            // });
+        job.status = OrderStatus.InProgress;
     }
 
-    private AddUpgradeControllerJob(creep:Creep):WorkOrder {
-        var src = creep.room.find(FIND_SOURCES);
-        var srcId: Id<Source> = src[0].id
-        var controllers: StructureController[] = creep.room.find(FIND_STRUCTURES, {
-                filter: structure => {
-                    return (structure.structureType == STRUCTURE_CONTROLLER)
-                }
-            });
-        var controllerId: Id<StructureController> = controllers[0].id;
-        var job = WO.upgradeController(controllerId, srcId, creep.store.getCapacity());
-        this.addWorkOrder(job);
+    private AddUpgradeControllerJob(room: Room):WorkOrder {
+        var controllerId = room.controller?.id;
+        if (!controllerId) {
+            throw new Error(`Controller not found in the room ${room.name}.`);
+        }
+        var src = room.find(FIND_SOURCES);
+        var srcId: Id<Source> = src[0].id;
+        var job = WO.upgradeController(controllerId, srcId, CARRY_CAPACITY);
         return job;
     }
 
-    private AddBuildConstructionJob(creep:Creep):WorkOrder {
-        var src = creep.room.find(FIND_SOURCES);
-        var srcId: Id<Source> = src[0].id
-        var sites: ConstructionSite[] = creep.room.find(FIND_MY_CONSTRUCTION_SITES);
+    private AddBuildConstructionJob(room: Room, sites: ConstructionSite[]):WorkOrder {
+        if (sites.length === 0) {
+            throw new Error(`No construction sites found.`);
+        }
+        var src = room.find(FIND_SOURCES);
+        var srcId: Id<Source> = src[0].id;
         var siteId: Id<ConstructionSite> = sites[0].id;
-        var job = WO.buildSite(siteId, srcId, creep.store.getCapacity());
-        this.addWorkOrder(job);
+        var job = WO.buildSite(siteId, srcId, CARRY_CAPACITY);
         return job;
     }
 
 
-    // public upgradeController(id: Id<StructureController>):void {
+// // Example: Find all extensions in a specific room that have free energy capacity
+// const extensions = Game.rooms['W1S1'].find(FIND_MY_STRUCTURES, {
+//   filter: (structure) => {
+//     return structure.structureType === STRUCTURE_EXTENSION &&
+//            structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0;
+//   }
+// });
 
-    //     WO.upgradeController(id);
-    //     const step:Task = {
-    //         step: Steps.Upgrade,
-    //         targetId: id
-    //     };
-    //     const wo:WorkOrder = {
-    //         id: Math.floor(Math.random() * 65534),
-    //         birthTime: Game.time,
-    //         status: "pending",
-    //         tasks: [step]
-    //     };
-    //     this.workOrders.push(wo);
-    // }
 
     private executeHarvest(creep: Creep, task: Task): boolean {
         const source = Game.getObjectById(task.targetId) as Source | null;
@@ -168,8 +170,8 @@ class Jms {
         }
 console.log(`${creep.name}:executeStep: workOrder ${wo.id} - ${wo.status}`);
 
-        if(wo.status === WStatus.Pending)
-            wo.status = WStatus.InProgress;
+        if(wo.status === OrderStatus.Pending)
+            wo.status = OrderStatus.InProgress;
 
         let StepId =  creep.memory.workOrderStep;
         if(StepId === undefined)
@@ -219,4 +221,4 @@ console.log(`${creep.name}:executeStep: workOrder ${wo.id} - ${wo.status}`);
 }
 
 const jms = new Jms();
-export {jms, WO, WorkOrder, Steps, Task, WStatus};
+export {jms, WO, WorkOrder, Steps, Task, OrderStatus};

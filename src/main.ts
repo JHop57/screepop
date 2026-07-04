@@ -51,6 +51,12 @@ export const loop = () => {
     let builderCount: number = 0;
     let upgraderCount: number = 0;
 
+    const ownedRoom = Object.values(Game.rooms)
+        .find(room => room.controller?.my);
+    if(ownedRoom) {
+        jms.initializeWorkorders(ownedRoom);
+    }
+
     for (const name in Game.creeps) {
         const creep = Game.creeps[name];
 
