@@ -46,10 +46,11 @@ export function buildSite(id: Id<ConstructionSite>, sourceId: Id<Source>, amount
     );
 }
 
-export function harvestEnergy(id: Id<Source>, amount: number):WorkOrder {
+export function fillSpawn(id: Id<Source>, amount: number):WorkOrder {
     return pipe(
         bundleTasks(
-            { step: Steps.Harvest, targetId: id, resourceType: RESOURCE_ENERGY, amount: amount }
+            { step: Steps.Harvest, targetId: id, resourceType: RESOURCE_ENERGY, amount: amount },
+            { step: Steps.Transfer, targetId: id, resourceType: RESOURCE_ENERGY, amount: amount }
         ),
         createWorkOrder(OrderClass.STRUCTURE_SPAWN)
     );

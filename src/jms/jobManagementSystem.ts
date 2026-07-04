@@ -5,39 +5,55 @@ const Plan = {
     SPAWN: 1,
     CONTROLLER: 4,
     STRUCTURE_EXTENSION:2,
-    CONSTRUCTION: 1
+    CONSTRUCTION: 3
 };
 
 class Jms {
     /*scribbles: Critical,high,medium,low*/
-
-    public workOrders: WorkOrder[] = [];
+    public highPriorityWorkOrders: WorkOrder[] = [];
+    public mediumPriorityWorkOrders: WorkOrder[] = [];
 
     constructor(){}
 
-    public addWorkOrder(wo:WorkOrder):void {
-        this.workOrders.push(wo);
+    public addWorkOrder(wo:WorkOrder, priority?: 'high' | 'medium'):void {
+        if (priority === 'high') {
+            this.highPriorityWorkOrders.push(wo);
+        } else {
+            this.mediumPriorityWorkOrders.push(wo);
+        }
     }
+
+    private findWorkOrderById(id: number | undefined): WorkOrder | undefined {
+        return id !== undefined ? this.highPriorityWorkOrders.find(wo => wo.id === id) || this.mediumPriorityWorkOrders.find(wo => wo.id === id) : undefined;
+    }
+
     public initializeWorkorders(room: Room):void {
-        let controllerCount = this.workOrders.filter(wo => wo.class === OrderClass.STRUCTURE_CONTROLLER).length;
-        let constructionCount = this.workOrders.filter(wo => wo.class === OrderClass.MAX_CONSTRUCTION_SITES).length;
-        let spawnCount = this.workOrders.filter(wo => wo.class === OrderClass.STRUCTURE_SPAWN).length;
+        let controllerCount = this.mediumPriorityWorkOrders.filter(wo => wo.class === OrderClass.STRUCTURE_CONTROLLER).length;
+        let constructionCount = this.mediumPriorityWorkOrders.filter(wo => wo.class === OrderClass.MAX_CONSTRUCTION_SITES).length;
+        let spawnCount = this.highPriorityWorkOrders.filter(wo => wo.class === OrderClass.STRUCTURE_SPAWN).length;
         if(controllerCount < Plan.CONTROLLER){
-            var job = this.AddUpgradeControllerJob(room);
-            this.addWorkOrder(job);
+            this.AddUpgradeControllerJob(room);
         }
         if(constructionCount < Plan.CONSTRUCTION){
             // eventually replace with something to create a wo when a site is created
             var sites: ConstructionSite[] = room.find(FIND_MY_CONSTRUCTION_SITES);
             if (sites.length > 0) {
-                var job = this.AddBuildConstructionJob(room, sites);
-                this.addWorkOrder(job);
+                this.AddBuildConstructionJob(room, sites);
             }
+        }
+
+        if(spawnCount < Plan.SPAWN){
+            this.AddSpawnJob(room);
         }
     }
 
     public assignWorkOrder(creep: Creep):void{
-        var job = this.workOrders.find(WorkOrder => WorkOrder.status === OrderStatus.Pending);
+        const wo = this.findWorkOrderById(creep.memory.workOrderId);
+        if(wo !== undefined){
+            return;
+        }
+
+        var job = this.highPriorityWorkOrders.find(WorkOrder => WorkOrder.status === OrderStatus.Pending) || this.mediumPriorityWorkOrders.find(WorkOrder => WorkOrder.status === OrderStatus.Pending);
         if(job === undefined){
             console.log(`${creep.name}:assignWorkOrder:no workOrder`);
             return;
@@ -47,28 +63,56 @@ class Jms {
         job.status = OrderStatus.InProgress;
     }
 
-    private AddUpgradeControllerJob(room: Room):WorkOrder {
-        var controllerId = room.controller?.id;
-        if (!controllerId) {
-            throw new Error(`Controller not found in the room ${room.name}.`);
+    private AddUpgradeControllerJob(room: Room):void {
+        var controller = room.controller;
+        if (!controller) {
+            console.log(`Controller not found in the room ${room.name}.`);
+            return;
         }
-        var src = room.find(FIND_SOURCES);
-        var srcId: Id<Source> = src[0].id;
-        var job = WO.upgradeController(controllerId, srcId, CARRY_CAPACITY);
-        return job;
+        var src = controller.pos.findClosestByPath(FIND_SOURCES);
+        if (!src) {
+            console.log(`No source found in the room ${room.name}.`);
+            return;
+        }
+        var job = WO.upgradeController(controller.id, src.id, CARRY_CAPACITY);
+        this.addWorkOrder(job);
     }
 
-    private AddBuildConstructionJob(room: Room, sites: ConstructionSite[]):WorkOrder {
+    private AddBuildConstructionJob(room: Room, sites: ConstructionSite[]):void {
         if (sites.length === 0) {
-            throw new Error(`No construction sites found.`);
+            console.log(`No construction sites found in the room ${room.name}.`);
+            return;
         }
-        var src = room.find(FIND_SOURCES);
-        var srcId: Id<Source> = src[0].id;
-        var siteId: Id<ConstructionSite> = sites[0].id;
-        var job = WO.buildSite(siteId, srcId, CARRY_CAPACITY);
-        return job;
+        var site = sites[0]; // For simplicity, just take the first site. You might want to implement a better selection strategy.
+        if (!site) {
+            console.log(`Construction site not found in the room ${room.name}.`);
+            return;
+        }
+        var src = site.pos.findClosestByPath(FIND_SOURCES);
+        if (!src) {
+            console.log(`No source found in the room ${room.name}.`);
+            return;
+        }
+        var job = WO.buildSite(site.id, src.id, CARRY_CAPACITY);
+        this.addWorkOrder(job);
     }
 
+    private AddSpawnJob(room: Room):void {
+        var spawns: StructureSpawn[] = room.find(FIND_MY_SPAWNS);
+        if (spawns.length > 0) {
+            var spawn = spawns[0];
+            if(spawn.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
+                console.log(`Spawn ${spawn.name} is already full. No need to add a fill spawn job.`);
+                return;
+            }
+            var src = spawn.pos.findClosestByPath(FIND_SOURCES);
+            if (src) {
+                var job = WO.fillSpawn(src.id, CARRY_CAPACITY);
+                this.addWorkOrder(job, 'high');
+                console.log(`Added fill spawn job for spawn ${spawn.name} in room ${room.name}.`);
+            }
+        }
+    }
 
 // // Example: Find all extensions in a specific room that have free energy capacity
 // const extensions = Game.rooms['W1S1'].find(FIND_MY_STRUCTURES, {
@@ -96,7 +140,7 @@ class Jms {
         if(result === OK && creep.store.getFreeCapacity() > 0)
             return false;  // keep loading
 
-        console.log(`${creep.name}:executeHarvest:Target=${task.targetId}:Error=${result}.`);
+        //console.log(`${creep.name}:executeHarvest:Target=${task.targetId}:Error=${result}.`);
         return true;  // some other error: quit here
     }
 
@@ -162,13 +206,11 @@ class Jms {
     }
 
     public executeStep(creep: Creep): void {
-        const workOrderId = creep.memory.workOrderId;
-        const wo = this.workOrders.find(WorkOrder => WorkOrder.id === workOrderId);
+        const wo = this.findWorkOrderById(creep.memory.workOrderId);
         if(wo === undefined){
-            console.log(`${creep.name}:executeStep:no workOrder`);
+            console.log(`${creep.name}:executeStep:no workOrder to execute`);
             return;
         }
-console.log(`${creep.name}:executeStep: workOrder ${wo.id} - ${wo.status}`);
 
         if(wo.status === OrderStatus.Pending)
             wo.status = OrderStatus.InProgress;
@@ -209,7 +251,7 @@ console.log(`${creep.name}:executeStep: workOrder ${wo.id} - ${wo.status}`);
                 wo.status = "completed";
                 creep.memory.workOrderId = undefined;
                 creep.memory.workOrderStep = undefined;
-                console.log(`${creep.name}:executeStep: WorkOrder ${workOrderId} completed.`);
+                console.log(`${creep.name}:executeStep: WorkOrder ${wo.id} completed.`);
                 return;
             }
 
@@ -217,6 +259,21 @@ console.log(`${creep.name}:executeStep: workOrder ${wo.id} - ${wo.status}`);
         }
 
         wo.heartbeatTime = Game.time;
+    }
+
+    public CleanUpWorkOrders(): void {
+        this.highPriorityWorkOrders.forEach(element => {
+            if(element.status === OrderStatus.InProgress && Game.time - element.heartbeatTime > 20) {
+                element.status = OrderStatus.Completed;
+            }
+        });
+        this.mediumPriorityWorkOrders.forEach(element => {
+            if(element.status === OrderStatus.InProgress && Game.time - element.heartbeatTime > 20) {
+                element.status = OrderStatus.Completed;
+            }
+        });
+        this.highPriorityWorkOrders = this.highPriorityWorkOrders.filter(x => x.status != OrderStatus.Completed && x.status != OrderStatus.Aborted);
+        this.mediumPriorityWorkOrders = this.mediumPriorityWorkOrders.filter(x => x.status != OrderStatus.Completed && x.status != OrderStatus.Aborted);
     }
 }
 

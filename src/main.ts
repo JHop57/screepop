@@ -40,22 +40,22 @@ declare const global: {
 };
 
 let log = Memory.log || [];
-jms.workOrders = Memory.workOrders || [];
+jms.mediumPriorityWorkOrders = Memory.workOrders || [];
 
 
 // When compiling TS to JS and bundling with rollup, the line numbers and file names in error messages change
 // This utility uses source maps to get the line numbers and file names of the original, TS source code
 //export const loop = ErrorMapper.wrapLoop(() => {
 export const loop = () => {
-    let harvesterCount: number = 0;
-    let builderCount: number = 0;
-    let upgraderCount: number = 0;
-
     const ownedRoom = Object.values(Game.rooms)
         .find(room => room.controller?.my);
     if(ownedRoom) {
         jms.initializeWorkorders(ownedRoom);
     }
+
+    let harvesterCount: number = 0;
+    let builderCount: number = 0;
+    let upgraderCount: number = 0;
 
     for (const name in Game.creeps) {
         const creep = Game.creeps[name];
@@ -70,17 +70,8 @@ export const loop = () => {
             upgraderCount++;
         }
 
-        const wo = jms.workOrders.find(WorkOrder => WorkOrder.id === creep.memory.workOrderId);
-        if(wo === undefined){
-            creep.memory.workOrderId = undefined;
-            creep.memory.workOrderStep = 0;
-        }
-        if (creep.memory.workOrderId === undefined) {
-            jms.assignWorkOrder(creep);
-        }
-        if(creep.memory.workOrderId) {
-            jms.executeStep(creep);
-        }
+        jms.assignWorkOrder(creep);
+        jms.executeStep(creep);
     }
 
 
@@ -125,17 +116,10 @@ export const loop = () => {
         }
     }
     if (Game.time % 10 == 0) {
-        jms.workOrders.forEach(element => {
-            if(element.status === "in-progress" && Game.time - element.heartbeatTime > 20) {
-                element.status = "completed"
-            }
-        });
-
-        // Clean up completed or aborted work orders
-        jms.workOrders = jms.workOrders.filter(x => x.status != "completed");
+        jms.CleanUpWorkOrders();
 
         Memory.log = log;
-        Memory.workOrders = jms.workOrders;
+        Memory.workOrders = jms.mediumPriorityWorkOrders;
     }
 };
 
