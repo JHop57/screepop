@@ -9,6 +9,11 @@ interface HudElement {
     secondaryPoints?: Pos[]
     styling?: HudStyling
 }
+interface Pos {
+  x: number;
+  y: number;
+  roomName: string;
+}
 
 class Hud {
     private colors = ['#bc62b2', '#454ca9', '#e69999', '#b72d3c', '#5c95e6', '#802a96', '#7e57e5', '#dab3dd', '#54215f', '#e67553', '#7fee4c', '#e33fdf', '#282194', '#b5b84f', '#6ac5df', '#76302b', '#c63e74', '#bf80e6', '#372dd2', '#7aebe0', '#987042', '#5172b0', '#e76995', '#1e1b60', '#62cd52', '#e0c49b', '#b035aa', '#985c82', '#b0989e', '#d0f15f', '#9a32dd', '#e9d3e3', '#822654', '#ec414e', '#6ba843', '#e1a25d', '#3b1131', '#e695e3', '#3c52e4', '#9fa5e3', '#8d81ac', '#b18e50', '#324174', '#7bea99', '#5dbb92', '#ea3ea4', '#6f34d3', '#944b43', '#dfd25d', '#4a8fa0', '#6a4a78', '#58813e', '#b8727c', '#562a96', '#5b1e2c', '#9279e6', '#bb4ee5', '#7e56b0', '#e96de1', '#62abc6', '#c65837', '#190c37', '#4976e6', '#d7eddb', '#a12e79', '#accfdc', '#376188', '#695722', '#abb4a6', '#cc84b8']

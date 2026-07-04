@@ -4,6 +4,7 @@ import * as _ from "lodash";
 // import * as roleUpgrader from 'roleUpgrader'
 // import * as roleBuilder from 'roleBuilder'
 import {jms,WorkOrder,Task, Steps } from "./jms/jobManagementSystem";
+import Hud from "utils/Hud";
 //import {WorkOrder, Steps, Task, newWorkOrder } from "./jms/workOrder";
 //import { Stack } from "./utils/stack";
 
@@ -21,7 +22,8 @@ declare global {
         uuid: number;
         log: any;
         role: string;
-        workOrders: WorkOrder[];
+        highPriorityWorkOrders: WorkOrder[];
+        mediumPriorityWorkOrders: WorkOrder[];
     }
 
     interface CreepMemory {
@@ -40,8 +42,10 @@ declare const global: {
 };
 
 let log = Memory.log || [];
-jms.mediumPriorityWorkOrders = Memory.workOrders || [];
+jms.highPriorityWorkOrders = Memory.highPriorityWorkOrders || [];
+jms.mediumPriorityWorkOrders = Memory.mediumPriorityWorkOrders || [];
 
+console.log(`game reloaded`);
 
 // When compiling TS to JS and bundling with rollup, the line numbers and file names in error messages change
 // This utility uses source maps to get the line numbers and file names of the original, TS source code
@@ -107,7 +111,12 @@ export const loop = () => {
     }
 
 
-
+    var hud = new Hud();
+    hud.makeElement("WorkOrders", {x: 10, y: 10, roomName: ownedRoom!.name}, [
+            `High Priority Work Orders: ${jms.highPriorityWorkOrders.length}`,
+            `Medium Priority Work Orders: ${jms.mediumPriorityWorkOrders.length}`
+        ], undefined, {scale: "medium"});
+    hud.display();  // and clear the hudElements array for the next tick
 
     // Automatically delete memory of missing creeps
     for (const name in Memory.creeps) {
@@ -115,12 +124,13 @@ export const loop = () => {
             delete Memory.creeps[name];
         }
     }
-    if (Game.time % 10 == 0) {
+    //if (Game.time % 10 == 0) {
         jms.CleanUpWorkOrders();
 
         Memory.log = log;
-        Memory.workOrders = jms.mediumPriorityWorkOrders;
-    }
+        Memory.mediumPriorityWorkOrders = jms.mediumPriorityWorkOrders;
+        Memory.highPriorityWorkOrders = jms.highPriorityWorkOrders;
+    //}
 };
 
 global.log = (...args: any[]) => console.log("LOG:", ...args);

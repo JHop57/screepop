@@ -2,9 +2,10 @@ import {WorkOrder, Task, Steps, OrderStatus, OrderClass} from './types'
 import * as WO from "./workOrder";
 
 const Plan = {
-    SPAWN: 1,
+    FILL_SPAWN: 1,
     CONTROLLER: 4,
-    STRUCTURE_EXTENSION:2,
+    FILL_EXTENSION:2,
+    FILL_CONTAINER: 2,
     CONSTRUCTION: 3
 };
 
@@ -28,9 +29,12 @@ class Jms {
     }
 
     public initializeWorkorders(room: Room):void {
-        let controllerCount = this.mediumPriorityWorkOrders.filter(wo => wo.class === OrderClass.STRUCTURE_CONTROLLER).length;
-        let constructionCount = this.mediumPriorityWorkOrders.filter(wo => wo.class === OrderClass.MAX_CONSTRUCTION_SITES).length;
-        let spawnCount = this.highPriorityWorkOrders.filter(wo => wo.class === OrderClass.STRUCTURE_SPAWN).length;
+        let controllerCount = this.mediumPriorityWorkOrders.filter(wo => wo.class === OrderClass.UPGRADE_CONTROLLER).length;
+        let constructionCount = this.mediumPriorityWorkOrders.filter(wo => wo.class === OrderClass.BUILD_CONSTRUCTION_SITE).length;
+        let spawnCount = this.highPriorityWorkOrders.filter(wo => wo.class === OrderClass.FILL_SPAWN).length;
+        let extensionCount = this.highPriorityWorkOrders.filter(wo => wo.class === OrderClass.FILL_EXTENSION).length;
+        let containerCount = this.highPriorityWorkOrders.filter(wo => wo.class === OrderClass.FILL_CONTAINER).length;
+
         if(controllerCount < Plan.CONTROLLER){
             this.AddUpgradeControllerJob(room);
         }
@@ -41,9 +45,14 @@ class Jms {
                 this.AddBuildConstructionJob(room, sites);
             }
         }
-
-        if(spawnCount < Plan.SPAWN){
+        if(spawnCount < Plan.FILL_SPAWN){
             this.AddSpawnJob(room);
+        }
+        if(extensionCount < Plan.FILL_EXTENSION){
+            this.AddExtensionJob(room);
+        }
+        if(containerCount < Plan.FILL_CONTAINER){
+            this.AddContainerJob(room);
         }
     }
 
@@ -53,13 +62,18 @@ class Jms {
             return;
         }
 
-        var job = this.highPriorityWorkOrders.find(WorkOrder => WorkOrder.status === OrderStatus.Pending) || this.mediumPriorityWorkOrders.find(WorkOrder => WorkOrder.status === OrderStatus.Pending);
+        var job = this.highPriorityWorkOrders.find(WorkOrder => WorkOrder.status === OrderStatus.Pending)
         if(job === undefined){
-            console.log(`${creep.name}:assignWorkOrder:no workOrder`);
+            console.log(`${creep.name}:assignWorkOrder:no high priority workOrder assigned`);
+            job = this.mediumPriorityWorkOrders.find(WorkOrder => WorkOrder.status === OrderStatus.Pending);
+        }
+        if(job === undefined){
+            console.log(`${creep.name}:assignWorkOrder:no medium priority workOrder assigned`);
             return;
         }
         creep.memory.workOrderId = job.id;
         creep.memory.workOrderStep = 0;
+        creep.say(`WO:${job.class}`);
         job.status = OrderStatus.InProgress;
     }
 
@@ -107,9 +121,47 @@ class Jms {
             }
             var src = spawn.pos.findClosestByPath(FIND_SOURCES);
             if (src) {
-                var job = WO.fillSpawn(src.id, CARRY_CAPACITY);
+                var job = WO.fillSpawn(spawn.id, src.id, CARRY_CAPACITY);
                 this.addWorkOrder(job, 'high');
                 console.log(`Added fill spawn job for spawn ${spawn.name} in room ${room.name}.`);
+            }
+        }
+    }
+
+    private AddContainerJob(room: Room):void {
+        var containers: StructureContainer[] = room.find(FIND_STRUCTURES, {
+            filter: (structure) => structure.structureType === STRUCTURE_CONTAINER
+        });
+        if (containers.length > 0) {
+            var container = containers[0];
+            if(container.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
+                console.log(`Container ${container.id} is already full. No need to add a fill container job.`);
+                return;
+            }
+            var src = container.pos.findClosestByPath(FIND_SOURCES);
+            if (src) {
+                var job = WO.fillContainer(container.id, src.id, CARRY_CAPACITY);
+                this.addWorkOrder(job);
+                console.log(`Added fill container job for container ${container.id} in room ${room.name}.`);
+            }
+        }
+    }
+
+    private AddExtensionJob(room: Room):void {
+        var extensions: StructureExtension[] = room.find(FIND_MY_STRUCTURES, {
+            filter: (structure) => structure.structureType === STRUCTURE_EXTENSION
+        });
+        if (extensions.length > 0) {
+            var extension = extensions[0];
+            if(extension.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
+                console.log(`Extension ${extension.id} is already full. No need to add a fill extension job.`);
+                return;
+            }
+            var src = extension.pos.findClosestByPath(FIND_SOURCES);
+            if (src) {
+                var job = WO.fillExtension(extension.id, src.id, CARRY_CAPACITY);
+                this.addWorkOrder(job);
+                console.log(`Added fill extension job for extension ${extension.id} in room ${room.name}.`);
             }
         }
     }
@@ -133,7 +185,7 @@ class Jms {
         const result = creep.harvest(source);
 
         if (result == ERR_NOT_IN_RANGE) {
-            creep.moveTo(source);
+            creep.moveTo(source, { visualizePathStyle: { stroke: "#fcba03" } });
             return false; // not there yet
         }
 
@@ -157,7 +209,7 @@ class Jms {
 
         const result = creep.transfer(target, task.resourceType, task.amount);
         if (result == ERR_NOT_IN_RANGE) {
-            creep.moveTo(target);
+            creep.moveTo(target, { visualizePathStyle: { stroke: "#fcba03" } });
             return false; // not there yet
         }
         if(result === OK && creep.store.getUsedCapacity() > 0)
@@ -176,7 +228,7 @@ class Jms {
 
         const result = creep.build(target);
         if (result == ERR_NOT_IN_RANGE) {
-            creep.moveTo(target);
+            creep.moveTo(target, { visualizePathStyle: { stroke: "#fcba03" } });
             return false; // not there yet
         }
         if(result === OK && creep.store.getUsedCapacity() > 0)
@@ -195,7 +247,7 @@ class Jms {
 
         const result = creep.upgradeController(target);
         if (result == ERR_NOT_IN_RANGE) {
-            creep.moveTo(target);
+            creep.moveTo(target, { visualizePathStyle: { stroke: "#fcba03" } });
             return false; // not there yet
         }
         if(result === OK && creep.store.getUsedCapacity() > 0)
@@ -251,7 +303,7 @@ class Jms {
                 wo.status = "completed";
                 creep.memory.workOrderId = undefined;
                 creep.memory.workOrderStep = undefined;
-                console.log(`${creep.name}:executeStep: WorkOrder ${wo.id} completed.`);
+                console.log(`${creep.name}:executeStep: WorkOrder ${wo.id} ${wo.class} completed.`);
                 return;
             }
 

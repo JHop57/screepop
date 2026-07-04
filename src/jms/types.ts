@@ -18,10 +18,11 @@ export const OrderStatus = {
 export type OrderStatus = (typeof OrderStatus)[keyof typeof OrderStatus];
 
 export const OrderClass = {
-    STRUCTURE_SPAWN: 1,
-    STRUCTURE_CONTROLLER: 4,
-    STRUCTURE_EXTENSION: 1,
-    MAX_CONSTRUCTION_SITES: 1
+    FILL_SPAWN: "fill-spawn",
+    UPGRADE_CONTROLLER: "upgrade-controller",
+    FILL_EXTENSION: "fill-extension",
+    FILL_CONTAINER: "fill-container",
+    BUILD_CONSTRUCTION_SITE: "build-construction-site"
 } as const;
 export type OrderClass = (typeof OrderClass)[keyof typeof OrderClass];
 
