@@ -1,10 +1,10 @@
-import {WorkOrder, Task, Steps, OrderStatus, OrderClass} from './types'
+import {WorkOrder, Task, Steps, OrderStatus, OrderType} from './types'
 import * as WO from "./workOrder";
 
 const Plan = {
-    FILL_SPAWN: 1,
+    FILL_SPAWN: 2,
     CONTROLLER: 4,
-    FILL_EXTENSION:2,
+    FILL_EXTENSION: 2,
     FILL_CONTAINER: 2,
     CONSTRUCTION: 3
 };
@@ -29,11 +29,11 @@ class Jms {
     }
 
     public initializeWorkorders(room: Room):void {
-        let controllerCount = this.mediumPriorityWorkOrders.filter(wo => wo.class === OrderClass.UPGRADE_CONTROLLER).length;
-        let constructionCount = this.mediumPriorityWorkOrders.filter(wo => wo.class === OrderClass.BUILD_CONSTRUCTION_SITE).length;
-        let spawnCount = this.highPriorityWorkOrders.filter(wo => wo.class === OrderClass.FILL_SPAWN).length;
-        let extensionCount = this.highPriorityWorkOrders.filter(wo => wo.class === OrderClass.FILL_EXTENSION).length;
-        let containerCount = this.highPriorityWorkOrders.filter(wo => wo.class === OrderClass.FILL_CONTAINER).length;
+        let controllerCount = this.mediumPriorityWorkOrders.filter(wo => wo.type === OrderType.UPGRADE_CONTROLLER).length;
+        let constructionCount = this.mediumPriorityWorkOrders.filter(wo => wo.type === OrderType.BUILD_SITE).length;
+        let fillSpawnCount = this.highPriorityWorkOrders.filter(wo => wo.type === OrderType.FILL_SPAWN).length;
+        let extensionCount = this.mediumPriorityWorkOrders.filter(wo => wo.type === OrderType.FILL_EXTENSION).length;
+        let containerCount = this.mediumPriorityWorkOrders.filter(wo => wo.type === OrderType.FILL_CONTAINER).length;
 
         if(controllerCount < Plan.CONTROLLER){
             this.AddUpgradeControllerJob(room);
@@ -45,7 +45,7 @@ class Jms {
                 this.AddBuildConstructionJob(room, sites);
             }
         }
-        if(spawnCount < Plan.FILL_SPAWN){
+        if(fillSpawnCount < Plan.FILL_SPAWN){
             this.AddSpawnJob(room);
         }
         if(extensionCount < Plan.FILL_EXTENSION){
@@ -73,7 +73,7 @@ class Jms {
         }
         creep.memory.workOrderId = job.id;
         creep.memory.workOrderStep = 0;
-        creep.say(`WO:${job.class}`);
+        creep.say(`${job.type}`);
         job.status = OrderStatus.InProgress;
     }
 
@@ -186,7 +186,7 @@ class Jms {
 
         if (result == ERR_NOT_IN_RANGE) {
             creep.moveTo(source, { visualizePathStyle: { stroke: "#fcba03" } });
-            return false; // not there yet
+            return false; // not there yet. keep trying
         }
 
         if(result === OK && creep.store.getFreeCapacity() > 0)
@@ -220,41 +220,36 @@ class Jms {
     }
 
     private executeBuild(creep: Creep, task: Task): boolean {
-        const target = Game.getObjectById(task.targetId) as ConstructionSite | null;
+        const target = Game.getObjectById(task.targetId) as ConstructionSite | StructureController | null;
         if (!target) {
             console.log(`${creep.name}:executeBuild:Target with ID ${task.targetId} not found for creep ${creep.name}`);
             return true;// return success so step is not repeated
         }
 
-        const result = creep.build(target);
+        var result: ScreepsReturnCode| ERR_ACCESS_DENIED | CreepActionReturnCode | ERR_NOT_ENOUGH_RESOURCES | ERR_RCL_NOT_ENOUGH;
+        if(target instanceof ConstructionSite) {
+            result = creep.build(target as ConstructionSite);
+            console.log(`${creep.name}:executeBuild:build construction site`);
+        }
+        else{
+            result = creep.upgradeController(target as StructureController);
+            console.log(`${creep.name}:executeBuild:upgrade controller`);
+        }
+
         if (result == ERR_NOT_IN_RANGE) {
             creep.moveTo(target, { visualizePathStyle: { stroke: "#fcba03" } });
             return false; // not there yet
         }
-        if(result === OK && creep.store.getUsedCapacity() > 0)
-            return false;  // task incomplete
-
-        console.log(`${creep.name}:executeBuild:Target=${task.targetId}:Error=${result}`);
-        return true; // task error so toss the task
-    }
-
-    private executeUpgrade(creep: Creep, task: Task): boolean {
-        const target = Game.getObjectById(task.targetId) as StructureController | null;
-        if (!target) {
-            console.log(`${creep.name}:executeUpgrade:Target with ID ${task.targetId} not found for creep ${creep.name}`);
-            return true;// return success so step is not repeated
+        if (result !== OK) {
+            console.log(`${creep.name}:executeBuild:Target=${task.targetId}:Error=${result}`);
+            return true; // task error so toss the task
         }
 
-        const result = creep.upgradeController(target);
-        if (result == ERR_NOT_IN_RANGE) {
-            creep.moveTo(target, { visualizePathStyle: { stroke: "#fcba03" } });
-            return false; // not there yet
-        }
-        if(result === OK && creep.store.getUsedCapacity() > 0)
+        if(target.progressTotal > 0 && creep.store.getUsedCapacity() > 0) {
             return false;  // task incomplete
+        }
 
-        console.log(`${creep.name}:executeUpgrade:Target=${task.targetId}:Error=${result}`);
-        return true; // task error so toss the task
+        return true; // task complete
     }
 
     public executeStep(creep: Creep): void {
@@ -272,38 +267,40 @@ class Jms {
             StepId = 0;
         const currentTask = wo.tasks[StepId];
 
-        let done: boolean = false;
+        let taskDone: boolean = false;
         switch (currentTask.step) {
             case Steps.Harvest:
                 if(this.executeHarvest(creep, currentTask) === true) {
-                    done = true;
+                    taskDone = true;
                 }
                 break;
             case Steps.Transfer:
                 if(this.executeTransfer(creep, currentTask) === true) {
-                    done = true;
+                    taskDone = true;
                 }
                 break;
-            case Steps.Build:
-                if(this.executeBuild(creep, currentTask) === true) {
-                    done = true;
-                }
-                break;
+            case Steps.Build:  // fall through to Upgrade since they are handled the same way
             case Steps.Upgrade:
-                if(this.executeUpgrade(creep, currentTask) === true) {
-                    done = true;
+                if(this.executeBuild(creep, currentTask) === true) {
+                    taskDone = true;
                 }
                 break;
         }
 
-        if (done) {
+        if (taskDone) {
             StepId = StepId + 1;
 
             if(wo.tasks.length <= StepId){
+                if(wo.repeat > 0) {
+                    wo.repeat--;
+                    creep.memory.workOrderStep = 0;
+                    console.log(`${creep.name}:executeStep: WorkOrder ${wo.id} ${wo.type} repeated.`);
+                    return;
+                }
                 wo.status = "completed";
                 creep.memory.workOrderId = undefined;
                 creep.memory.workOrderStep = undefined;
-                console.log(`${creep.name}:executeStep: WorkOrder ${wo.id} ${wo.class} completed.`);
+                console.log(`${creep.name}:executeStep: WorkOrder ${wo.id} ${wo.type} completed.`);
                 return;
             }
 

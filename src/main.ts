@@ -30,10 +30,7 @@ declare global {
         role: string;
         workOrderId?: number;
         workOrderStep?: number;
-        //room: string
-        // working: boolean
-        // upgrading: boolean
-        // building: boolean
+        workOrderTargetId?: Id<Source | Structure | ConstructionSite | StructureController | StructureSpawn | StructureExtension | StructureContainer>;
     }
 }
 // Syntax for adding properties to `global` (ex "global.log")
@@ -79,13 +76,13 @@ export const loop = () => {
     }
 
 
-    if (harvesterCount < 2) {
+    if (harvesterCount < 3) {
         let newName = "Harvester" + Game.time;
         console.log("Spawning new harvester: " + newName);
         Game.spawns["Spawn1"].spawnCreep([WORK, CARRY, MOVE], newName, { memory: { role: "harvester" } });
     }
 
-    if (builderCount < 1) {
+    if (builderCount < 3) {
         let newName = "Builder" + Game.time;
         console.log("Spawning new builder: " + newName);
         Game.spawns["Spawn1"].spawnCreep([WORK, CARRY, MOVE], newName, { memory: { role: "builder" } });
@@ -94,7 +91,7 @@ export const loop = () => {
     // let upgrader = _.filter(Game.creeps, (creep: Creep) => creep.memory.role == "upgrader");
     // console.log("Upgraders: " + upgrader.length);
 
-    if (upgraderCount < 1) {
+    if (upgraderCount < 3) {
         let newName = "Upgrader" + Game.time;
         console.log("Spawning new upgrader: " + newName);
         Game.spawns["Spawn1"].spawnCreep([WORK, CARRY, MOVE], newName, { memory: { role: "upgrader" } });

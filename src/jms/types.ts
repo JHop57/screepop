@@ -17,14 +17,15 @@ export const OrderStatus = {
 } as const;
 export type OrderStatus = (typeof OrderStatus)[keyof typeof OrderStatus];
 
-export const OrderClass = {
+export const OrderType = {
     FILL_SPAWN: "fill-spawn",
-    UPGRADE_CONTROLLER: "upgrade-controller",
     FILL_EXTENSION: "fill-extension",
     FILL_CONTAINER: "fill-container",
-    BUILD_CONSTRUCTION_SITE: "build-construction-site"
+    UPGRADE_CONTROLLER: "upgrade-controller",
+    BUILD_SITE: "build-site",
+    CREATE_CREEP: "create-creep"
 } as const;
-export type OrderClass = (typeof OrderClass)[keyof typeof OrderClass];
+export type OrderType = (typeof OrderType)[keyof typeof OrderType];
 
 export type TaskTarget = Id<Source | Structure | ConstructionSite | StructureController>;
 
@@ -37,9 +38,12 @@ export interface Task {
 
 export interface WorkOrder {
     readonly id: number;
+    type: OrderType;
+    targetId: TaskTarget;
+    tasks: Task[];
+    status: OrderStatus;
+    repeat: number;
     readonly birthTime: number;
     heartbeatTime: number;
-    class: OrderClass;
-    status: OrderStatus;
-    tasks: Task[];
+    payload?: any;
 }
