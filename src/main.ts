@@ -1,12 +1,7 @@
 //import { ErrorMapper } from "utils/ErrorMapper"
 import * as _ from "lodash";
-//import * as roleHarvester from "roleHarvester";
-// import * as roleUpgrader from 'roleUpgrader'
-// import * as roleBuilder from 'roleBuilder'
-import {jms,WorkOrder,Task, Steps } from "./jms/jobManagementSystem";
+import {jms, WorkOrder } from "./jms/erp";
 import Hud from "utils/Hud";
-//import {WorkOrder, Steps, Task, newWorkOrder } from "./jms/workOrder";
-//import { Stack } from "./utils/stack";
 
 declare global {
     /*
@@ -72,7 +67,7 @@ export const loop = () => {
         }
 
         jms.assignWorkOrder(creep);
-        jms.executeStep(creep);
+        jms.ExecuteStep(creep);
     }
 
 
